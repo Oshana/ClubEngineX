@@ -39,6 +39,7 @@ const SessionDetail: React.FC = () => {
   const [showManualAssignment, setShowManualAssignment] = useState(false);
   const [manualAssignments, setManualAssignments] = useState<any[]>([]);
   const [manualSearchQuery, setManualSearchQuery] = useState('');
+  const [autoAssignRemaining, setAutoAssignRemaining] = useState(false);
   const [showCancelButton, setShowCancelButton] = useState(false); // Track if Cancel Round button should show
   const [sortBy, setSortBy] = useState<'waiting' | 'played' | 'name' | 'gender' | 'division' | 'mm' | 'mf' | 'ff'>('waiting');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -1242,18 +1243,20 @@ const SessionDetail: React.FC = () => {
 
       {/* Manual Assignment Modal */}
       {showManualAssignment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
+          <div className="bg-white w-full h-full max-w-none max-h-none rounded-none flex flex-col">
+            <div className="p-4 border-b flex items-center justify-between">
+              <div className="flex items-center gap-4">
                 <h2 className="text-2xl font-bold">Manual Court Assignment</h2>
-                {/* Actions at top */}
-                <div className="flex gap-2">
+              </div>
+              {/* Actions at top */}
+              <div className="flex gap-2">
                   <button
                     onClick={() => {
                       setShowManualAssignment(false);
                       setManualAssignments([]);
                       setManualSearchQuery('');
+                      setAutoAssignRemaining(false);
                     }}
                     className="btn btn-secondary"
                   >
@@ -1263,20 +1266,41 @@ const SessionDetail: React.FC = () => {
                     onClick={async () => {
                       try {
                         const preferences = {
+                          desired_mm: 0,
+                          desired_mf: 0,
+                          desired_ff: 0,
                           prioritize_waiting: 1.0,
-                          balance_levels: 0.5,
-                          partner_variety: 0.3,
-                          opponent_variety: 0.2,
+                          prioritize_equal_matches: 1.0,
+                          avoid_repeat_partners: 0.5,
+                          avoid_repeat_opponents: 0.3,
+                          balance_skill: 0.5,
                         };
                         
-                        const response = await sessionsAPI.autoAssign(sessionId, {
-                          ...preferences,
-                          court_assignments: manualAssignments,
-                        });
+                        if (autoAssignRemaining) {
+                          // Filter out courts with at least one player assigned
+                          const assignedCourts = manualAssignments
+                            .filter(court => 
+                              court.team_a_player1_id || court.team_a_player2_id || 
+                              court.team_b_player1_id || court.team_b_player2_id
+                            );
+                          
+                          // Call auto-assign with manual assignments as locked courts
+                          const response = await sessionsAPI.autoAssign(sessionId, {
+                            ...preferences,
+                            court_assignments: assignedCourts,
+                          });
+                        } else {
+                          // Pure manual assignment - send all courts including empty ones
+                          const response = await sessionsAPI.autoAssign(sessionId, {
+                            ...preferences,
+                            court_assignments: manualAssignments,
+                          });
+                        }
                         
                         setShowManualAssignment(false);
                         setManualAssignments([]);
                         setManualSearchQuery('');
+                        setAutoAssignRemaining(false);
                         await loadData();
                         showNotification('Manual assignment completed successfully', 'success');
                       } catch (error) {
@@ -1288,9 +1312,9 @@ const SessionDetail: React.FC = () => {
                   >
                     Finish Assignment
                   </button>
-                </div>
               </div>
-              
+            </div>
+            <div className="p-6 flex-1 overflow-y-auto">
               <div className="grid grid-cols-3 gap-6">
                 {/* Player Panel - Left */}
                 <div className="col-span-1">
@@ -1488,7 +1512,24 @@ const SessionDetail: React.FC = () => {
 
                 {/* Courts - Right */}
                 <div className="col-span-2">
-                  <h3 className="font-bold mb-3">Court Assignments</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold">Court Assignments</h3>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-medium text-gray-700">Auto assign remaining courts</span>
+                      <button
+                        onClick={() => setAutoAssignRemaining(!autoAssignRemaining)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                          autoAssignRemaining ? 'bg-blue-600' : 'bg-gray-300'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            autoAssignRemaining ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
                   <div className="space-y-4 max-h-[600px] overflow-y-auto">
                     {manualAssignments.map((court, courtIdx) => (
                       <div key={courtIdx} className="border-2 border-gray-300 rounded p-4">

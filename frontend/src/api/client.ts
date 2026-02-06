@@ -54,8 +54,14 @@ export const sessionsAPI = {
     api.post(`/sessions/${id}/attendance`, { player_ids }),
   getAttendance: (id: number) => api.get(`/sessions/${id}/attendance`),
   getRounds: (id: number) => api.get(`/sessions/${id}/rounds`),
-  autoAssign: (id: number, preferences: any) =>
-    api.post(`/sessions/${id}/rounds/auto_assign`, { session_id: id, preferences }),
+  autoAssign: (id: number, data: any) => {
+    const { court_assignments, ...preferences } = data || {};
+    const payload: any = { session_id: id, preferences };
+    if (court_assignments) {
+      payload.court_assignments = court_assignments;
+    }
+    return api.post(`/sessions/${id}/rounds/auto_assign`, payload);
+  },
   getStats: (id: number) => api.get(`/sessions/${id}/stats`),
 };
 

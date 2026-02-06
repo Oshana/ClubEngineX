@@ -30,7 +30,7 @@ class MatchType(str, enum.Enum):
     MM = "MM"  # Male vs Male
     MF = "MF"  # Mixed
     FF = "FF"  # Female vs Female
-    OTHER = "Other"
+    OTHER = "OTHER"
 
 
 class RankingSystemType(str, enum.Enum):

@@ -28,7 +28,7 @@ class MatchType(str, Enum):
     MM = "MM"
     MF = "MF"
     FF = "FF"
-    OTHER = "Other"
+    OTHER = "OTHER"
 
 
 class RankingSystemType(str, Enum):
@@ -227,6 +227,7 @@ class AutoAssignmentPreferences(BaseModel):
 class AutoAssignmentRequest(BaseModel):
     session_id: int
     preferences: AutoAssignmentPreferences = AutoAssignmentPreferences()
+    court_assignments: Optional[List[CourtAssignmentCreate]] = None
 
 
 # Stats Schemas

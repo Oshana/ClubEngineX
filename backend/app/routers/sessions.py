@@ -7,7 +7,7 @@ from app.algorithm import PlayerStats, auto_assign_courts
 from app.database import get_db
 from app.dependencies import get_current_admin, get_current_user
 from app.models import (Attendance, AttendanceStatus, CourtAssignment,
-                        MatchType, Player, Round)
+                        Gender, MatchType, Player, Round)
 from app.models import Session as SessionModel
 from app.models import SessionStatus, User
 from app.schemas import (AttendanceCreate, AttendanceResponse,
@@ -249,9 +249,17 @@ def auto_assign_round(
             detail="Not enough players (minimum 4 required)"
         )
     
+    # Check if there's already an unstarted round
+    existing_unstarted_round = db.query(Round).filter(
+        Round.session_id == session_id,
+        Round.started_at == None
+    ).order_by(Round.round_index.desc()).first()
+
+    # Determine round index (reuse unstarted round index if present)
+    current_round_index = existing_unstarted_round.round_index if existing_unstarted_round else len(session.rounds)
+
     # Calculate player stats
     player_stats = []
-    current_round_index = len(session.rounds)
     
     for player in present_players:
         # Get matches played in this session
@@ -337,26 +345,79 @@ def auto_assign_round(
         balance_skill=request.preferences.balance_skill
     )
     
-    # Run algorithm
-    assignments, waiting_ids = auto_assign_courts(
-        player_stats,
-        session.number_of_courts,
-        current_round_index,
-        algo_prefs,
-        locked_courts_dict if locked_courts_dict else None
-    )
-    
-    # Check if there's already an unstarted round and delete it
-    existing_unstarted_round = db.query(Round).filter(
-        Round.session_id == session_id,
-        Round.started_at == None
-    ).first()
-    
+    # If manual court assignments are provided, handle them
+    assignments = None
+    if request.court_assignments and len(request.court_assignments) > 0:
+        # Check if we need to auto-assign remaining courts
+        assigned_player_ids = set()
+        for court in request.court_assignments:
+            if court.team_a_player1_id:
+                assigned_player_ids.add(court.team_a_player1_id)
+            if court.team_a_player2_id:
+                assigned_player_ids.add(court.team_a_player2_id)
+            if court.team_b_player1_id:
+                assigned_player_ids.add(court.team_b_player1_id)
+            if court.team_b_player2_id:
+                assigned_player_ids.add(court.team_b_player2_id)
+        
+        # Check if any court has incomplete assignments (mix mode)
+        has_incomplete_courts = any(
+            not (court.team_a_player1_id and court.team_a_player2_id and 
+                 court.team_b_player1_id and court.team_b_player2_id)
+            for court in request.court_assignments
+        )
+        
+        # If there are unassigned players and we have fewer than required courts, auto-assign remaining
+        if has_incomplete_courts or len(assigned_player_ids) < len(present_players):
+            # Build locked courts from manual assignments that are complete
+            manual_locked_courts = {}
+            for court in request.court_assignments:
+                if (court.team_a_player1_id and court.team_a_player2_id and 
+                    court.team_b_player1_id and court.team_b_player2_id):
+                    manual_locked_courts[court.court_number] = [
+                        court.team_a_player1_id,
+                        court.team_a_player2_id,
+                        court.team_b_player1_id,
+                        court.team_b_player2_id
+                    ]
+            
+            # Filter player_stats to exclude already assigned players
+            remaining_player_stats = [
+                ps for ps in player_stats 
+                if ps.player_id not in assigned_player_ids
+            ]
+            
+            # Run algorithm for remaining players
+            if len(remaining_player_stats) >= 4:
+                auto_assignments, waiting_ids = auto_assign_courts(
+                    remaining_player_stats,
+                    session.number_of_courts,
+                    current_round_index,
+                    algo_prefs,
+                    manual_locked_courts if manual_locked_courts else None
+                )
+                # Combine manual and auto assignments
+                assignments = list(request.court_assignments) + auto_assignments
+            else:
+                assignments = request.court_assignments
+        else:
+            # Pure manual mode
+            assignments = request.court_assignments
+    else:
+        # Run algorithm
+        assignments, waiting_ids = auto_assign_courts(
+            player_stats,
+            session.number_of_courts,
+            current_round_index,
+            algo_prefs,
+            locked_courts_dict if locked_courts_dict else None
+        )
+
+    # Delete any existing unstarted round and its assignments
     if existing_unstarted_round:
-        # Delete the existing unstarted round and its assignments
         db.delete(existing_unstarted_round)
         db.flush()
-    
+
     # Create new round
     new_round = Round(
         session_id=session_id,
@@ -366,17 +427,65 @@ def auto_assign_round(
     db.flush()
     
     # Create court assignments
+    if request.court_assignments and len(request.court_assignments) > 0:
+        player_map = {p.id: p for p in present_players}
+
+        def resolve_match_type(team_a_ids, team_b_ids):
+            if len(team_a_ids) < 2 or len(team_b_ids) < 2:
+                return MatchType.OTHER
+
+            team_a_genders = [player_map[pid].gender for pid in team_a_ids if pid in player_map]
+            team_b_genders = [player_map[pid].gender for pid in team_b_ids if pid in player_map]
+            genders = team_a_genders + team_b_genders
+
+            male_count = sum(1 for g in genders if g == Gender.MALE)
+            female_count = sum(1 for g in genders if g == Gender.FEMALE)
+
+            if male_count == 4:
+                return MatchType.MM
+            if female_count == 4:
+                return MatchType.FF
+
+            team_a_male = sum(1 for g in team_a_genders if g == Gender.MALE)
+            team_a_female = sum(1 for g in team_a_genders if g == Gender.FEMALE)
+            team_b_male = sum(1 for g in team_b_genders if g == Gender.MALE)
+            team_b_female = sum(1 for g in team_b_genders if g == Gender.FEMALE)
+
+            if team_a_male == 1 and team_a_female == 1 and team_b_male == 1 and team_b_female == 1:
+                return MatchType.MF
+
+            return MatchType.OTHER
+
     for assignment in assignments:
-        court = CourtAssignment(
-            round_id=new_round.id,
-            court_number=assignment.court_number,
-            team_a_player1_id=assignment.team_a[0],
-            team_a_player2_id=assignment.team_a[1],
-            team_b_player1_id=assignment.team_b[0],
-            team_b_player2_id=assignment.team_b[1],
-            match_type=assignment.match_type,
-            locked=False
-        )
+        # Check if this is a manual assignment (has team_a_player1_id) or auto assignment (has team_a tuple)
+        if hasattr(assignment, 'team_a_player1_id'):
+            # Manual assignment
+            team_a_ids = [pid for pid in [assignment.team_a_player1_id, assignment.team_a_player2_id] if pid is not None]
+            team_b_ids = [pid for pid in [assignment.team_b_player1_id, assignment.team_b_player2_id] if pid is not None]
+            match_type = resolve_match_type(team_a_ids, team_b_ids)
+
+            court = CourtAssignment(
+                round_id=new_round.id,
+                court_number=assignment.court_number,
+                team_a_player1_id=assignment.team_a_player1_id,
+                team_a_player2_id=assignment.team_a_player2_id,
+                team_b_player1_id=assignment.team_b_player1_id,
+                team_b_player2_id=assignment.team_b_player2_id,
+                match_type=match_type,
+                locked=assignment.locked if hasattr(assignment, 'locked') and assignment.locked is not None else False
+            )
+        else:
+            # Auto assignment (from algorithm)
+            court = CourtAssignment(
+                round_id=new_round.id,
+                court_number=assignment.court_number,
+                team_a_player1_id=assignment.team_a[0],
+                team_a_player2_id=assignment.team_a[1],
+                team_b_player1_id=assignment.team_b[0],
+                team_b_player2_id=assignment.team_b[1],
+                match_type=assignment.match_type,
+                locked=False
+            )
         db.add(court)
     
     db.commit()

@@ -84,20 +84,29 @@ def calculate_priority_score(
     return score
 
 
-def determine_match_type(players: List[PlayerStats]) -> MatchType:
-    """Determine match type based on player genders."""
-    genders = [p.gender for p in players]
+def determine_match_type(players: List[PlayerStats], team_a_idx: List[int], team_b_idx: List[int]) -> MatchType:
+    """Determine match type based on team compositions."""
+    team_a = [players[i] for i in team_a_idx]
+    team_b = [players[i] for i in team_b_idx]
+
+    genders = [p.gender for p in team_a + team_b]
     male_count = sum(1 for g in genders if g == Gender.MALE)
     female_count = sum(1 for g in genders if g == Gender.FEMALE)
-    
+
     if male_count == 4:
         return MatchType.MM
-    elif female_count == 4:
+    if female_count == 4:
         return MatchType.FF
-    elif male_count > 0 and female_count > 0:
+
+    team_a_male = sum(1 for p in team_a if p.gender == Gender.MALE)
+    team_a_female = sum(1 for p in team_a if p.gender == Gender.FEMALE)
+    team_b_male = sum(1 for p in team_b if p.gender == Gender.MALE)
+    team_b_female = sum(1 for p in team_b if p.gender == Gender.FEMALE)
+
+    if team_a_male == 1 and team_a_female == 1 and team_b_male == 1 and team_b_female == 1:
         return MatchType.MF
-    else:
-        return MatchType.OTHER
+
+    return MatchType.OTHER
 
 
 def calculate_team_balance_score(
@@ -156,14 +165,42 @@ def find_best_team_arrangement(
     """
     Find the best way to divide 4 players into 2 teams of 2.
     Returns indices of team A and team B.
-    Considers: skill balance, partner/opponent variety, and court variety.
+    Considers: skill balance, partner/opponent variety, court variety, and ensures valid match types.
     """
-    # All possible team arrangements (3 ways to divide 4 players into 2 pairs)
-    arrangements = [
-        ((0, 1), (2, 3)),
-        ((0, 2), (1, 3)),
-        ((0, 3), (1, 2))
-    ]
+    # Count genders in the group
+    gender_count = {}
+    for i, player in enumerate(players):
+        gender_count[i] = player.gender
+    
+    males = [i for i, p in enumerate(players) if p.gender == Gender.MALE]
+    females = [i for i, p in enumerate(players) if p.gender == Gender.FEMALE]
+    
+    # Determine valid arrangements based on gender composition
+    # For MF (2M + 2F): each team must have 1M + 1F
+    # For MM (4M) or FF (4F): any arrangement works
+    arrangements = []
+    
+    if len(males) == 2 and len(females) == 2:
+        # MF match type - each team must have 1 male and 1 female
+        # Only valid arrangements are those that split genders evenly
+        arrangements = [
+            ((males[0], females[0]), (males[1], females[1])),
+            ((males[0], females[1]), (males[1], females[0]))
+        ]
+    elif len(males) == 4 or len(females) == 4:
+        # MM or FF match type - all arrangements are valid
+        arrangements = [
+            ((0, 1), (2, 3)),
+            ((0, 2), (1, 3)),
+            ((0, 3), (1, 2))
+        ]
+    else:
+        # This shouldn't happen with our smart grouping, but fallback to all arrangements
+        arrangements = [
+            ((0, 1), (2, 3)),
+            ((0, 2), (1, 3)),
+            ((0, 3), (1, 2))
+        ]
     
     best_score = float('inf')
     best_arrangement = arrangements[0]
@@ -277,16 +314,44 @@ def auto_assign_courts(
     num_courts_to_fill = num_courts - (len(locked_courts) if locked_courts else 0)
     players_needed = num_courts_to_fill * 4
     
-    # Select players for courts
+    # Select players for courts - but be smart about gender combinations
+    # to avoid creating OTHER match types
     selected_players = []
     remaining_players = []
     
-    if len(available_players) >= players_needed:
-        selected_players = available_players[:players_needed]
-        remaining_players = available_players[players_needed:]
-    else:
-        selected_players = available_players
-        # Not enough players for all courts
+    # Separate by gender for smart grouping
+    males = [p for p in available_players if p.gender == Gender.MALE]
+    females = [p for p in available_players if p.gender == Gender.FEMALE]
+    
+    courts_filled = 0
+    max_courts = num_courts_to_fill
+    
+    # Strategy: Create valid match types only (MM, FF, MF)
+    # Priority order: prefer MM/FF first, then MF
+    while courts_filled < max_courts:
+        # Try to create MM (4 males)
+        if len(males) >= 4:
+            selected_players.extend(males[:4])
+            males = males[4:]
+            courts_filled += 1
+        # Try to create FF (4 females)
+        elif len(females) >= 4:
+            selected_players.extend(females[:4])
+            females = females[4:]
+            courts_filled += 1
+        # Try to create MF (2 males + 2 females)
+        elif len(males) >= 2 and len(females) >= 2:
+            selected_players.extend(males[:2])
+            selected_players.extend(females[:2])
+            males = males[2:]
+            females = females[2:]
+            courts_filled += 1
+        else:
+            # Not enough players to form a valid match type
+            break
+    
+    # Remaining players wait
+    remaining_players = males + females
     
     # Group selected players into courts (groups of 4)
     court_assignments = []
@@ -300,8 +365,8 @@ def auto_assign_courts(
                 p for p in player_stats if p.player_id in locked_player_ids_list
             ]
             if len(locked_players) == 4:
-                match_type = determine_match_type(locked_players)
                 team_a_idx, team_b_idx = find_best_team_arrangement(locked_players, preferences, locked_court_num)
+                match_type = determine_match_type(locked_players, team_a_idx, team_b_idx)
                 
                 court_assignments.append(CourtAssignment(
                     court_number=locked_court_num,
@@ -321,10 +386,9 @@ def auto_assign_courts(
                 court_number += 1
             
             group = selected_players[i:i+4]
-            match_type = determine_match_type(group)
-            
             # Find best team arrangement (considers skill balance, partners, opponents, and court variety)
             team_a_idx, team_b_idx = find_best_team_arrangement(group, preferences, court_number)
+            match_type = determine_match_type(group, team_a_idx, team_b_idx)
             
             court_assignments.append(CourtAssignment(
                 court_number=court_number,
