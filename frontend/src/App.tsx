@@ -10,6 +10,7 @@ import Players from './pages/Players';
 import SessionDetail from './pages/SessionDetail';
 import Sessions from './pages/Sessions';
 import Settings from './pages/Settings';
+import Statistics from './pages/Statistics';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -98,6 +99,17 @@ function App() {
                 <AdminRoute>
                   <Layout>
                     <Settings />
+                  </Layout>
+                </AdminRoute>
+              }
+            />
+            
+            <Route
+              path="/statistics"
+              element={
+                <AdminRoute>
+                  <Layout>
+                    <Statistics />
                   </Layout>
                 </AdminRoute>
               }

@@ -90,4 +90,9 @@ export const clubSettingsAPI = {
   getLevels: () => api.get('/club-settings/levels'),
 };
 
+// Statistics API
+export const statisticsAPI = {
+  getGlobalStats: () => api.get('/statistics/global'),
+};
+
 export default api;

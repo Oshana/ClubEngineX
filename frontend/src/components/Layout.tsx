@@ -23,6 +23,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   <Link to="/sessions" className="text-gray-700 hover:text-primary-600">
                     Sessions
                   </Link>
+                  <Link to="/statistics" className="text-gray-700 hover:text-primary-600">
+                    Statistics
+                  </Link>
                   <Link to="/settings" className="text-gray-700 hover:text-primary-600">
                     Settings
                   </Link>
