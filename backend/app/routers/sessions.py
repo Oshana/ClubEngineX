@@ -155,12 +155,160 @@ def set_attendance(
             detail="Session not found"
         )
     
-    # Clear existing attendance
-    db.query(Attendance).filter(Attendance.session_id == session_id).delete()
+    # Get currently present players before update
+    current_attendance = db.query(Attendance).filter(
+        Attendance.session_id == session_id,
+        Attendance.status == AttendanceStatus.PRESENT
+    ).all()
+    current_player_ids = {att.player_id for att in current_attendance}
     
-    # Add new attendance records
+    # Determine which players are being removed
+    new_player_ids = set(attendance.player_ids)
+    removed_player_ids = current_player_ids - new_player_ids
+    
+    # Handle court assignments for removed players if there's an active round
+    if removed_player_ids:
+        # Get the current active round (not ended)
+        active_round = db.query(Round).filter(
+            Round.session_id == session_id,
+            Round.ended_at.is_(None)
+        ).first()
+        
+        if active_round:
+            # Get all court assignments for this round
+            courts = db.query(CourtAssignment).filter(
+                CourtAssignment.round_id == active_round.id
+            ).all()
+            
+            # Get all players currently in courts
+            players_in_courts = set()
+            for court in courts:
+                for pid in [court.team_a_player1_id, court.team_a_player2_id, 
+                           court.team_b_player1_id, court.team_b_player2_id]:
+                    if pid and pid not in removed_player_ids:
+                        players_in_courts.add(pid)
+            
+            # Get waiting players (present but not in any court)
+            waiting_player_ids = new_player_ids - players_in_courts
+            waiting_players = db.query(Player).filter(Player.id.in_(waiting_player_ids)).all() if waiting_player_ids else []
+            
+            courts_to_update = []
+            for court in courts:
+                # Check if any removed player is in this court
+                court_player_slots = {
+                    'team_a_player1_id': court.team_a_player1_id,
+                    'team_a_player2_id': court.team_a_player2_id,
+                    'team_b_player1_id': court.team_b_player1_id,
+                    'team_b_player2_id': court.team_b_player2_id
+                }
+                
+                if any(pid in removed_player_ids for pid in court_player_slots.values() if pid):
+                    # Remove the players from the court
+                    removed_slots = []
+                    for slot, pid in court_player_slots.items():
+                        if pid in removed_player_ids:
+                            setattr(court, slot, None)
+                            removed_slots.append(slot)
+                    
+                    # Get remaining players in court
+                    remaining_players_data = []
+                    for slot in ['team_a_player1_id', 'team_a_player2_id', 'team_b_player1_id', 'team_b_player2_id']:
+                        pid = getattr(court, slot)
+                        if pid:
+                            player = db.query(Player).filter(Player.id == pid).first()
+                            if player:
+                                remaining_players_data.append({'slot': slot, 'player': player})
+                    
+                    # Try to fill empty slots from waiting list
+                    for slot in removed_slots:
+                        if waiting_players:
+                            # Get current court player genders
+                            court_genders = [p['player'].gender for p in remaining_players_data]
+                            
+                            # Try to find a suitable replacement
+                            best_replacement = None
+                            for waiting_player in waiting_players:
+                                # Temporarily add this player to check if it forms a valid match
+                                test_genders = court_genders + [waiting_player.gender]
+                                
+                                if len(test_genders) == 4:
+                                    # Check if this creates a valid match type
+                                    male_count = sum(1 for g in test_genders if g == Gender.MALE)
+                                    female_count = sum(1 for g in test_genders if g == Gender.FEMALE)
+                                    
+                                    # Valid match types: MM (4M), FF (4F), or MF (2M+2F)
+                                    if (male_count == 4 or female_count == 4 or 
+                                        (male_count == 2 and female_count == 2)):
+                                        best_replacement = waiting_player
+                                        break
+                            
+                            if best_replacement:
+                                # Assign the replacement player
+                                setattr(court, slot, best_replacement.id)
+                                remaining_players_data.append({'slot': slot, 'player': best_replacement})
+                                waiting_players.remove(best_replacement)
+                    
+                    # Check final count
+                    final_player_ids = [
+                        court.team_a_player1_id,
+                        court.team_a_player2_id,
+                        court.team_b_player1_id,
+                        court.team_b_player2_id
+                    ]
+                    final_count = sum(1 for p in final_player_ids if p is not None)
+                    
+                    # If we don't have exactly 4 players or can't form valid match, clear the court
+                    if final_count != 4:
+                        court.team_a_player1_id = None
+                        court.team_a_player2_id = None
+                        court.team_b_player1_id = None
+                        court.team_b_player2_id = None
+                        court.match_type = MatchType.OTHER
+                    else:
+                        # Recalculate match type for the updated court
+                        players_in_court = db.query(Player).filter(
+                            Player.id.in_([p for p in final_player_ids if p])
+                        ).all()
+                        male_count = sum(1 for p in players_in_court if p.gender == Gender.MALE)
+                        female_count = sum(1 for p in players_in_court if p.gender == Gender.FEMALE)
+                        
+                        if male_count == 4:
+                            court.match_type = MatchType.MM
+                        elif female_count == 4:
+                            court.match_type = MatchType.FF
+                        elif male_count == 2 and female_count == 2:
+                            court.match_type = MatchType.MF
+                        else:
+                            court.match_type = MatchType.OTHER
+                    
+                    courts_to_update.append(court)
+            
+            # Commit court changes
+            if courts_to_update:
+                db.commit()
+    
+    # Update attendance - only remove players who are no longer present
+    # and add new players, preserving check_in_time for existing players
+    for player_id in removed_player_ids:
+        db.query(Attendance).filter(
+            Attendance.session_id == session_id,
+            Attendance.player_id == player_id
+        ).delete()
+    
+    # Add new attendance records only for players who don't have one
     attendance_records = []
     for player_id in attendance.player_ids:
+        # Check if player already has attendance record
+        existing = db.query(Attendance).filter(
+            Attendance.session_id == session_id,
+            Attendance.player_id == player_id
+        ).first()
+        
+        if existing:
+            # Keep existing record (preserves original check_in_time)
+            attendance_records.append(existing)
+            continue
+        
         # Verify player exists
         player = db.query(Player).filter(Player.id == player_id).first()
         if not player:
@@ -637,6 +785,12 @@ def get_session_stats(
     total_rounds = len(session.rounds)
     
     for player in present_players:
+        # Get player's attendance record to check when they joined
+        attendance = db.query(Attendance).filter(
+            Attendance.session_id == session_id,
+            Attendance.player_id == player.id
+        ).first()
+        
         matches_played = 0
         rounds_sitting = 0
         partners = set()
@@ -646,6 +800,11 @@ def get_session_stats(
         courts_played = set()  # Track court numbers
         
         for round_obj in session.rounds:
+            # Only count rounds that were created after player joined
+            # Use <= to skip rounds created strictly before check-in (not equal)
+            if attendance and attendance.check_in_time > round_obj.created_at:
+                continue
+                
             played_in_round = False
             for court in round_obj.court_assignments:
                 player_ids = [

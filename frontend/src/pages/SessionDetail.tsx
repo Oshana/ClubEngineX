@@ -1,4 +1,4 @@
-import { DndContext, DragEndEvent, closestCenter } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverlay, DragOverEvent, DragStartEvent, closestCenter, pointerWithin } from '@dnd-kit/core';
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { playersAPI, roundsAPI, sessionsAPI, clubSettingsAPI } from '../api/client';
@@ -16,6 +16,7 @@ const SessionDetail: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [allPlayers, setAllPlayers] = useState<Player[]>([]);
   const [temporaryPlayers, setTemporaryPlayers] = useState<Player[]>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<Attendance[]>([]);
   const [showTempPlayerModal, setShowTempPlayerModal] = useState(false);
   const [showTempPlayerForm, setShowTempPlayerForm] = useState(false);
   const [tempPlayerName, setTempPlayerName] = useState('');
@@ -41,8 +42,13 @@ const SessionDetail: React.FC = () => {
   const [manualSearchQuery, setManualSearchQuery] = useState('');
   const [autoAssignRemaining, setAutoAssignRemaining] = useState(false);
   const [showCancelButton, setShowCancelButton] = useState(false); // Track if Cancel Round button should show
+  const [showResetCourtsConfirm, setShowResetCourtsConfirm] = useState(false);
   const [sortBy, setSortBy] = useState<'waiting' | 'played' | 'name' | 'gender' | 'division' | 'mm' | 'mf' | 'ff'>('waiting');
+  const [attendanceSortBy, setAttendanceSortBy] = useState<'name' | 'gender' | 'division'>('name');
+  const [attendanceSortOrder, setAttendanceSortOrder] = useState<'asc' | 'desc'>('asc');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [draggedPlayer, setDraggedPlayer] = useState<{ id: number; name: string; level?: string } | null>(null);
+  const [targetPlayer, setTargetPlayer] = useState<{ id: number; name: string; level?: string } | null>(null);
   const [matchTypePopup, setMatchTypePopup] = useState<{ playerId: number; playerName: string; counts: any; opponentsCount: Record<string, number> } | null>(null);
   const [showAlarmPopup, setShowAlarmPopup] = useState(false);
   const [activeTab, setActiveTab] = useState<'courts' | 'stats'>('courts');
@@ -134,6 +140,7 @@ const SessionDetail: React.FC = () => {
       setSession(sessionRes.data);
       setAllPlayers(playersRes.data);
       setRounds(roundsRes.data);
+      setAttendanceRecords(attendanceRes.data);
       
       // Set attendance from backend (now includes guest players with is_temp=true)
       const attendancePlayerIds = attendanceRes.data.map((a: any) => a.player_id);
@@ -230,6 +237,37 @@ const SessionDetail: React.FC = () => {
       console.error('Failed to auto-assign:', error);
       const errorMessage = error.response?.data?.detail || 'Failed to auto-assign players. Please try again.';
       showNotification('error', errorMessage);
+    }
+  };
+
+  const handleResetCourts = async () => {
+    if (!currentRound) return;
+    
+    setShowResetCourtsConfirm(false);
+    
+    try {
+      // Clear all court assignments sequentially to avoid race conditions
+      for (const court of currentRound.court_assignments) {
+        try {
+          await roundsAPI.updateCourtAssignment(court.id, {
+            team_a_player1_id: null,
+            team_a_player2_id: null,
+            team_b_player1_id: null,
+            team_b_player2_id: null,
+          });
+        } catch (courtError) {
+          console.error(`Failed to clear court ${court.court_number}:`, courtError);
+          // Continue with other courts even if one fails
+        }
+      }
+      
+      showNotification('success', 'All courts cleared. Players moved to waiting list.');
+      
+      // Reload data
+      await loadData();
+    } catch (error) {
+      console.error('Failed to reset courts:', error);
+      showNotification('error', 'Failed to reset courts. Please try again.');
     }
   };
 
@@ -365,8 +403,63 @@ const SessionDetail: React.FC = () => {
     }
   };
 
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    const sourceData = active.data.current;
+    
+    if (sourceData && sourceData.playerId) {
+      const player = getAllPlayersIncludingTemp().find(p => p.id === sourceData.playerId);
+      if (player) {
+        setDraggedPlayer({
+          id: player.id,
+          name: player.full_name,
+          level: player.level
+        });
+      }
+    }
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over, active } = event;
+    
+    if (!over || !active) {
+      setTargetPlayer(null);
+      return;
+    }
+    
+    const targetData = over.data.current;
+    const sourceData = active.data.current;
+    
+    if (!targetData || !sourceData) {
+      setTargetPlayer(null);
+      return;
+    }
+    
+    // Only show swap visual if hovering over a slot that has a player
+    // and it's not the same slot being dragged
+    if (targetData.currentPlayerId && 
+        sourceData.playerId && 
+        sourceData.playerId !== targetData.currentPlayerId) {
+      const player = getAllPlayersIncludingTemp().find(p => p.id === targetData.currentPlayerId);
+      if (player) {
+        setTargetPlayer({
+          id: player.id,
+          name: player.full_name,
+          level: player.level
+        });
+        return;
+      }
+    }
+    
+    setTargetPlayer(null);
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
+    
+    // Clear dragged player overlay
+    setDraggedPlayer(null);
+    setTargetPlayer(null);
     
     if (!over || !currentRound) return;
     if (active.id === over.id) return; // Dropped on itself
@@ -374,59 +467,50 @@ const SessionDetail: React.FC = () => {
     const sourceData = active.data.current;
     const targetData = over.data.current;
 
-    if (!sourceData || !targetData) return;
+    if (!sourceData) return;
 
     const sourcePlayerId = sourceData.playerId;
-    const targetPlayerId = targetData.currentPlayerId;
+    const sourceIsWaiting = sourceData.isWaiting || false;
     const sourceSlotId = sourceData.slotId as string;
-    const targetSlotId = targetData.slotId as string;
 
-    // Parse slot IDs to get court and position
-    const parseSlotId = (slotId: string) => {
-      // Format: court-{courtId}-team-{a|b}-player-{1|2}
-      const parts = slotId.split('-');
-      return {
-        courtId: parseInt(parts[1]),
-        team: parts[3] as 'a' | 'b',
-        position: parseInt(parts[5]) as 1 | 2,
+    // Case 1: Dragging from waiting list to a court slot
+    if (sourceIsWaiting && targetData) {
+      const targetPlayerId = targetData.currentPlayerId;
+      const targetSlotId = targetData.slotId as string;
+      
+      // Parse target slot ID
+      const parseSlotId = (slotId: string) => {
+        const parts = slotId.split('-');
+        return {
+          courtId: parseInt(parts[1]),
+          team: parts[3] as 'a' | 'b',
+          position: parseInt(parts[5]) as 1 | 2,
+        };
       };
-    };
-
-    const source = parseSlotId(sourceSlotId);
-    const target = parseSlotId(targetSlotId);
-
-    // Create updated court assignments
-    const updatedAssignments = currentRound.court_assignments.map(court => {
-      const updatedCourt = { ...court };
       
-      // Update source court
-      if (court.id === source.courtId) {
-        const field = `team_${source.team}_player${source.position}_id` as keyof typeof updatedCourt;
-        (updatedCourt as any)[field] = targetPlayerId || null;
-      }
+      const target = parseSlotId(targetSlotId);
       
-      // Update target court
-      if (court.id === target.courtId) {
-        const field = `team_${target.team}_player${target.position}_id` as keyof typeof updatedCourt;
-        (updatedCourt as any)[field] = sourcePlayerId || null;
-      }
+      // Update court assignment: replace target slot with waiting player
+      const updatedAssignments = currentRound.court_assignments.map(court => {
+        if (court.id === target.courtId) {
+          const updatedCourt = { ...court };
+          const field = `team_${target.team}_player${target.position}_id` as keyof typeof updatedCourt;
+          (updatedCourt as any)[field] = sourcePlayerId;
+          return updatedCourt;
+        }
+        return court;
+      });
       
-      return updatedCourt;
-    });
-
-    // Update local state optimistically
-    const updatedRound = {
-      ...currentRound,
-      court_assignments: updatedAssignments,
-    };
-    setCurrentRound(updatedRound);
-    setRounds(rounds.map(r => r.id === updatedRound.id ? updatedRound : r));
-
-    try {
-      // Update each affected court on the backend
-      const courtsToUpdate = new Set([source.courtId, target.courtId]);
-      for (const courtId of courtsToUpdate) {
-        const court = updatedAssignments.find(c => c.id === courtId);
+      // Update local state
+      const updatedRound = {
+        ...currentRound,
+        court_assignments: updatedAssignments,
+      };
+      setCurrentRound(updatedRound);
+      setRounds(rounds.map(r => r.id === updatedRound.id ? updatedRound : r));
+      
+      try {
+        const court = updatedAssignments.find(c => c.id === target.courtId);
         if (court) {
           await roundsAPI.updateCourtAssignment(court.id, {
             team_a_player1_id: court.team_a_player1_id || null,
@@ -435,20 +519,147 @@ const SessionDetail: React.FC = () => {
             team_b_player2_id: court.team_b_player2_id || null,
           });
         }
+        
+        showNotification('success', 'Player moved to court');
+        const statsRes = await sessionsAPI.getStats(sessionId);
+        setStats(statsRes.data);
+      } catch (error) {
+        console.error('Error updating court assignment:', error);
+        showNotification('error', 'Failed to move player');
+        const roundsRes = await sessionsAPI.getRounds(sessionId);
+        setRounds(roundsRes.data);
+        setCurrentRound(roundsRes.data.find(r => r.id === currentRound.id) || null);
       }
       
-      showNotification('Players swapped successfully', 'success');
-      // Refresh data
-      const statsRes = await sessionsAPI.getStats(sessionId);
-      setStats(statsRes.data);
-    } catch (error) {
-      console.error('Error updating court assignments:', error);
-      showNotification('Failed to swap players', 'error');
-      // Revert on error
-      const roundsRes = await sessionsAPI.getRounds(sessionId);
-      setRounds(roundsRes.data);
-      if (roundsRes.data.length > 0) {
-        setCurrentRound(roundsRes.data[roundsRes.data.length - 1]);
+      return;
+    }
+    
+    // Case 2: Dragging from court to waiting list (drop on empty space or another waiting player)
+    if (!sourceIsWaiting && !targetData) {
+      // Dropped somewhere outside courts (likely waiting list area)
+      // Remove player from court
+      const parseSlotId = (slotId: string) => {
+        const parts = slotId.split('-');
+        return {
+          courtId: parseInt(parts[1]),
+          team: parts[3] as 'a' | 'b',
+          position: parseInt(parts[5]) as 1 | 2,
+        };
+      };
+      
+      const source = parseSlotId(sourceSlotId);
+      
+      const updatedAssignments = currentRound.court_assignments.map(court => {
+        if (court.id === source.courtId) {
+          const updatedCourt = { ...court };
+          const field = `team_${source.team}_player${source.position}_id` as keyof typeof updatedCourt;
+          (updatedCourt as any)[field] = null;
+          return updatedCourt;
+        }
+        return court;
+      });
+      
+      const updatedRound = {
+        ...currentRound,
+        court_assignments: updatedAssignments,
+      };
+      setCurrentRound(updatedRound);
+      setRounds(rounds.map(r => r.id === updatedRound.id ? updatedRound : r));
+      
+      try {
+        const court = updatedAssignments.find(c => c.id === source.courtId);
+        if (court) {
+          await roundsAPI.updateCourtAssignment(court.id, {
+            team_a_player1_id: court.team_a_player1_id || null,
+            team_a_player2_id: court.team_a_player2_id || null,
+            team_b_player1_id: court.team_b_player1_id || null,
+            team_b_player2_id: court.team_b_player2_id || null,
+          });
+        }
+        
+        showNotification('success', 'Player moved to waiting list');
+        const statsRes = await sessionsAPI.getStats(sessionId);
+        setStats(statsRes.data);
+      } catch (error) {
+        console.error('Error updating court assignment:', error);
+        showNotification('error', 'Failed to move player');
+        const roundsRes = await sessionsAPI.getRounds(sessionId);
+        setRounds(roundsRes.data);
+        setCurrentRound(roundsRes.data.find(r => r.id === currentRound.id) || null);
+      }
+      
+      return;
+    }
+
+    // Case 3: Swapping between two court slots (original behavior)
+    if (!sourceIsWaiting && targetData) {
+      const targetPlayerId = targetData.currentPlayerId;
+      const targetSlotId = targetData.slotId as string;
+
+      // Parse slot IDs to get court and position
+      const parseSlotId = (slotId: string) => {
+        const parts = slotId.split('-');
+        return {
+          courtId: parseInt(parts[1]),
+          team: parts[3] as 'a' | 'b',
+          position: parseInt(parts[5]) as 1 | 2,
+        };
+      };
+
+      const source = parseSlotId(sourceSlotId);
+      const target = parseSlotId(targetSlotId);
+
+      // Create updated court assignments
+      const updatedAssignments = currentRound.court_assignments.map(court => {
+        const updatedCourt = { ...court };
+        
+        // Update source court
+        if (court.id === source.courtId) {
+          const field = `team_${source.team}_player${source.position}_id` as keyof typeof updatedCourt;
+          (updatedCourt as any)[field] = targetPlayerId || null;
+        }
+        
+        // Update target court
+        if (court.id === target.courtId) {
+          const field = `team_${target.team}_player${target.position}_id` as keyof typeof updatedCourt;
+          (updatedCourt as any)[field] = sourcePlayerId || null;
+        }
+        
+        return updatedCourt;
+      });
+
+      // Update local state optimistically
+      const updatedRound = {
+        ...currentRound,
+        court_assignments: updatedAssignments,
+      };
+      setCurrentRound(updatedRound);
+      setRounds(rounds.map(r => r.id === updatedRound.id ? updatedRound : r));
+
+      try {
+        // Update each affected court on the backend
+        const courtsToUpdate = new Set([source.courtId, target.courtId]);
+        for (const courtId of courtsToUpdate) {
+          const court = updatedAssignments.find(c => c.id === courtId);
+          if (court) {
+            await roundsAPI.updateCourtAssignment(court.id, {
+              team_a_player1_id: court.team_a_player1_id || null,
+              team_a_player2_id: court.team_a_player2_id || null,
+              team_b_player1_id: court.team_b_player1_id || null,
+              team_b_player2_id: court.team_b_player2_id || null,
+            });
+          }
+        }
+        
+        showNotification('success', 'Players swapped successfully');
+        const statsRes = await sessionsAPI.getStats(sessionId);
+        setStats(statsRes.data);
+      } catch (error) {
+        console.error('Error updating court assignments:', error);
+        showNotification('error', 'Failed to swap players');
+        const roundsRes = await sessionsAPI.getRounds(sessionId);
+        setRounds(roundsRes.data);
+        setCurrentRound(roundsRes.data.find(r => r.id === currentRound.id) || null);
       }
     }
   };
@@ -512,6 +723,14 @@ const SessionDetail: React.FC = () => {
         >
           Auto-Assign Round
         </button>
+        {currentRound && !currentRound.started_at && (
+          <button
+            onClick={() => setShowResetCourtsConfirm(true)}
+            className="btn btn-secondary"
+          >
+            Reset Courts
+          </button>
+        )}
         <button
           onClick={() => {
             if (!session) return;
@@ -636,7 +855,12 @@ const SessionDetail: React.FC = () => {
 
       {/* Courts and Waiting List */}
       {activeTab === 'courts' && (
-      <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext 
+        collisionDetection={pointerWithin} 
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Players in Session Panel */}
           <div>
@@ -728,9 +952,85 @@ const SessionDetail: React.FC = () => {
           </div>
           
           <div>
-            <WaitingList players={getWaitingPlayers()} stats={stats} />
+            <WaitingList 
+              players={getWaitingPlayers()} 
+              stats={stats}
+              rounds={rounds}
+              attendanceRecords={attendanceRecords}
+              isDragDisabled={!currentRound || currentRound.started_at !== null}
+            />
           </div>
         </div>
+        
+        {/* Drag Overlay - Shows what's being dragged */}
+        <DragOverlay>
+          {draggedPlayer ? (
+            <div className="bg-white rounded-lg shadow-xl border border-gray-200 min-w-[280px]">
+              {/* Show swap animation when hovering over another player */}
+              {targetPlayer ? (
+                <div className="p-3">
+                  {/* Dragged Player */}
+                  <div className="flex items-center gap-3 pb-2">
+                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                      {draggedPlayer.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 text-sm truncate">{draggedPlayer.name}</div>
+                      {draggedPlayer.level && (
+                        <div className="text-xs text-gray-500">Division {draggedPlayer.level}</div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Swap Icon */}
+                  <div className="flex justify-center py-1">
+                    <div className="bg-green-100 rounded-full p-1.5">
+                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                    </div>
+                  </div>
+                  
+                  {/* Target Player */}
+                  <div className="flex items-center gap-3 pt-2">
+                    <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 text-white rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                      {targetPlayer.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 text-sm truncate">{targetPlayer.name}</div>
+                      {targetPlayer.level && (
+                        <div className="text-xs text-gray-500">Division {targetPlayer.level}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Single player being dragged */
+                <div className="p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                      {draggedPlayer.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 text-sm truncate">{draggedPlayer.name}</div>
+                      {draggedPlayer.level && (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <span className="text-xs text-gray-500">Division</span>
+                          <span className="text-xs font-medium text-blue-600">{draggedPlayer.level}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-gray-400">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
       )}
 
@@ -1034,68 +1334,138 @@ const SessionDetail: React.FC = () => {
               </button>
             </div>
             
-            {/* Player List */}
-            <div className="space-y-2 overflow-y-auto flex-1">
-              {/* Guest Players - only show those active in current session */}
-              {temporaryPlayers
-                .filter(player => 
-                  !confirmedSessionPlayers.includes(player.id) &&
-                  player.full_name.toLowerCase().includes(searchQuery.toLowerCase())
-                )
-                .map((player) => (
-                <label key={player.id} className="flex items-center space-x-2 py-1 hover:bg-blue-50 px-2 rounded bg-blue-25">
-                  <input
-                    type="checkbox"
-                    checked={presentPlayers.includes(player.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setPresentPlayers([...presentPlayers, player.id]);
-                      } else {
-                        setPresentPlayers(presentPlayers.filter(id => id !== player.id));
+            {/* Player Table */}
+            <div className="overflow-y-auto flex-1 border border-gray-200 rounded-lg">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-3 text-left">
+                      <input
+                        type="checkbox"
+                        onChange={(e) => {
+                          const allPlayerIds = [...temporaryPlayers, ...allPlayers]
+                            .filter(p => !confirmedSessionPlayers.includes(p.id) && p.full_name.toLowerCase().includes(searchQuery.toLowerCase()))
+                            .map(p => p.id);
+                          if (e.target.checked) {
+                            setPresentPlayers([...new Set([...presentPlayers, ...allPlayerIds])]);
+                          } else {
+                            setPresentPlayers(presentPlayers.filter(id => !allPlayerIds.includes(id)));
+                          }
+                        }}
+                        className="w-4 h-4"
+                      />
+                    </th>
+                    <th 
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => {
+                        if (attendanceSortBy === 'name') {
+                          setAttendanceSortOrder(attendanceSortOrder === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setAttendanceSortBy('name');
+                          setAttendanceSortOrder('asc');
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-1">
+                        Name
+                        <span className={attendanceSortBy === 'name' ? 'text-gray-700' : 'text-gray-300'}>
+                          {attendanceSortBy === 'name' && attendanceSortOrder === 'asc' ? '↑' : '↓'}
+                        </span>
+                      </div>
+                    </th>
+                    <th 
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => {
+                        if (attendanceSortBy === 'gender') {
+                          setAttendanceSortOrder(attendanceSortOrder === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setAttendanceSortBy('gender');
+                          setAttendanceSortOrder('asc');
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-1">
+                        Gender
+                        <span className={attendanceSortBy === 'gender' ? 'text-gray-700' : 'text-gray-300'}>
+                          {attendanceSortBy === 'gender' && attendanceSortOrder === 'asc' ? '↑' : '↓'}
+                        </span>
+                      </div>
+                    </th>
+                    <th 
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => {
+                        if (attendanceSortBy === 'division') {
+                          setAttendanceSortOrder(attendanceSortOrder === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setAttendanceSortBy('division');
+                          setAttendanceSortOrder('asc');
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-1">
+                        Division
+                        <span className={attendanceSortBy === 'division' ? 'text-gray-700' : 'text-gray-300'}>
+                          {attendanceSortBy === 'division' && attendanceSortOrder === 'asc' ? '↑' : '↓'}
+                        </span>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {[...temporaryPlayers.filter(p => p.is_temp), ...allPlayers.filter(p => !p.is_temp)]
+                    .filter(player => 
+                      !confirmedSessionPlayers.includes(player.id) &&
+                      player.full_name.toLowerCase().includes(searchQuery.toLowerCase())
+                    )
+                    .sort((a, b) => {
+                      let comparison = 0;
+                      if (attendanceSortBy === 'name') {
+                        comparison = a.full_name.localeCompare(b.full_name);
+                      } else if (attendanceSortBy === 'gender') {
+                        comparison = (a.gender || '').localeCompare(b.gender || '');
+                      } else if (attendanceSortBy === 'division') {
+                        const aLevel = parseFloat(a.level || '0');
+                        const bLevel = parseFloat(b.level || '0');
+                        comparison = aLevel - bLevel;
                       }
-                    }}
-                    className="w-4 h-4"
-                  />
-                  <span className="flex items-center gap-2">
-                    {player.full_name}
-                    <span className="px-2 py-0.5 bg-blue-500 text-white text-xs rounded font-medium">
-                      GUEST
-                    </span>
-                  </span>
-                </label>
-              ))}
-              
-              {/* Regular Players */}
-              {allPlayers
-                .filter(player => 
-                  !player.is_temp &&
-                  !confirmedSessionPlayers.includes(player.id) &&
-                  player.full_name.toLowerCase().includes(searchQuery.toLowerCase())
-                )
-                .map((player) => (
-                <label key={player.id} className="flex items-center space-x-2 py-1 hover:bg-gray-50 px-2 rounded">
-                  <input
-                    type="checkbox"
-                    checked={presentPlayers.includes(player.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setPresentPlayers([...presentPlayers, player.id]);
-                      } else {
-                      setPresentPlayers(presentPlayers.filter(id => id !== player.id));
-                    }
-                  }}
-                  className="w-4 h-4"
-                />
-                <span>
-                  {player.full_name}
-                  {player.level && (
-                    <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs rounded font-medium inline-flex items-center gap-1">
-                      🏆 {player.level}
-                    </span>
-                  )}
-                </span>
-              </label>
-            ))}
+                      return attendanceSortOrder === 'asc' ? comparison : -comparison;
+                    })
+                    .map((player) => (
+                    <tr key={player.id} className={`hover:bg-gray-50 ${player.is_temp ? 'bg-blue-25' : ''}`}>
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={presentPlayers.includes(player.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setPresentPlayers([...presentPlayers, player.id]);
+                            } else {
+                              setPresentPlayers(presentPlayers.filter(id => id !== player.id));
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                        <div className="flex items-center gap-2">
+                          {player.full_name}
+                          {player.is_temp && (
+                            <span className="px-2 py-0.5 bg-blue-500 text-white text-xs rounded font-medium">
+                              GUEST
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700 capitalize">
+                        {player.gender || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {player.level || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1216,6 +1586,17 @@ const SessionDetail: React.FC = () => {
         onConfirm={confirmEndSession}
         onCancel={() => setShowEndSessionConfirm(false)}
         danger
+      />
+
+      {/* Reset Courts Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showResetCourtsConfirm}
+        title="Reset Courts"
+        message="Are you sure you want to clear all court assignments? All players will be moved to the waiting list. This action cannot be undone."
+        confirmLabel="Reset Courts"
+        cancelLabel="Cancel"
+        onConfirm={handleResetCourts}
+        onCancel={() => setShowResetCourtsConfirm(false)}
       />
 
       {/* Cancel Round Confirmation Dialog */}

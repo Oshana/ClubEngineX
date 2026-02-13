@@ -247,6 +247,167 @@ The algorithm creates fair court assignments by:
 }
 ```
 
+## Test Scenario: Auto-Assignment Fairness Validation
+
+This scenario validates that the auto-assignment algorithm distributes play opportunities fairly, balances skill levels, and provides variety in partners/opponents over multiple rounds.
+
+### Test Setup
+
+**Session Configuration:**
+- 2 courts available
+- 8 rounds (15-minute matches)
+- 9 players with varying skills and genders
+
+**Test Players:**
+
+| # | Name | Gender | Skill Level | Numeric Rank |
+|---|------|--------|-------------|--------------|
+| 1 | Alice | Female | Advanced | 7.0 |
+| 2 | Bob | Male | Advanced | 6.5 |
+| 3 | Carol | Female | Intermediate | 5.5 |
+| 4 | David | Male | Intermediate | 6.0 |
+| 5 | Emma | Female | Intermediate | 5.0 |
+| 6 | Frank | Male | Intermediate | 5.5 |
+| 7 | Grace | Female | Beginner+ | 4.5 |
+| 8 | Henry | Male | Beginner+ | 4.0 |
+| 9 | Iris | Female | Advanced | 6.5 |
+
+**Algorithm Settings:**
+```json
+{
+  "desired_mm": 1,
+  "desired_mf": 1,
+  "desired_ff": 1,
+  "prioritize_waiting": 1.0,
+  "prioritize_equal_matches": 1.0,
+  "avoid_repeat_partners": 0.5,
+  "avoid_repeat_opponents": 0.3,
+  "balance_skill": 0.5
+}
+```
+
+### Running the Test
+
+1. **Create test session:**
+   ```bash
+   # Login as admin
+   curl -X POST http://localhost:8000/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"email":"admin@club.test","password":"Admin123!"}'
+   ```
+
+2. **Create players** with the skill levels above
+
+3. **Create session:**
+   ```bash
+   # Use the access token from login
+   curl -X POST http://localhost:8000/sessions \
+     -H "Authorization: Bearer {token}" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "name": "Fairness Test Session",
+       "date": "2026-02-12",
+       "match_duration_minutes": 15,
+       "number_of_courts": 2
+     }'
+   ```
+
+4. **Set all 9 players as present**
+
+5. **Run 8 rounds:**
+   - Click "Auto Assign Round" for each round
+   - Start the round
+   - Wait/fast-forward through match duration
+   - End the round
+   - Repeat
+
+### Expected Results After 8 Rounds
+
+**✅ Fair Play Distribution:**
+- Each player should have played 7-8 matches (target: ~7.11 matches per player)
+- With 2 courts and 9 players, 1 player waits each round (8 play, 1 sits)
+- Maximum variance: ±1 match between any two players
+- Each player should wait exactly 1 round (fair rotation)
+
+**Example distribution:**
+```
+Player          | Matches Played | Waiting Rounds
+----------------|----------------|---------------
+Alice (F, 7.0)  | 7              | 1
+Bob (M, 6.5)    | 7              | 1
+Carol (F, 5.5)  | 7              | 1
+David (M, 6.0)  | 7              | 1
+Emma (F, 5.0)   | 8              | 0
+Frank (M, 5.5)  | 7              | 1
+Grace (F, 4.5)  | 7              | 1
+Henry (M, 4.0)  | 8              | 0
+Iris (F, 6.5)   | 8              | 0
+```
+
+**✅ Match Type Distribution:**
+- MM (Male-Male): 2-3 matches (varies based on rotation)
+- MF (Mixed): 3-4 matches (varies based on rotation)
+- FF (Female-Female): 2-3 matches (varies based on rotation)
+- OTHER: 0 matches (guaranteed by algorithm)
+- Total: 16 matches across 8 rounds (2 courts × 8 rounds)
+
+**✅ Skill Balance:**
+- Average team skill difference per match: <1.0 points
+- No match should have >2.0 points skill difference between teams
+- Example balanced matches:
+  - (Alice 7.0 + Henry 4.0 = 11.0) vs (Bob 6.5 + Grace 4.5 = 11.0) = 0.0 diff ✓
+  - (Iris 6.5 + Emma 5.0 = 11.5) vs (David 6.0 + Carol 5.5 = 11.5) = 0.0 diff ✓
+  - (Bob 6.5 + Emma 5.0 = 11.5) vs (Alice 7.0 + Frank 5.5 = 12.5) = 1.0 diff ✓
+
+**✅ Partner Variety:**
+- Each player should have 5-7 different partners across 7-8 matches
+- No player should partner with the same person more than 2 times
+- Average partners per player: ~6 unique partners
+
+**✅ Opponent Variety:**
+- Each player should face 6-8 different opponents
+- No player should face the same opponent more than 2 times
+- Average opponents per player: ~7 unique opponents
+
+**✅ Court Variety:**
+- Each player should play on both courts
+- Distribution: 3-5 times per court
+- Balanced usage: ~50% Court 1, ~50% Court 2
+
+### Validation Metrics
+
+Check the session statistics dashboard to verify:
+
+1. **Fairness Score** (calculated from variance in matches played):
+   - Excellent: <0.5 variance
+   - Good: 0.5-1.0 variance
+   - Acceptable: 1.0-1.5 variance
+
+2. **Average Wait Time**:
+   - Should be exactly 1 round per player (with 9 players and 2 courts)
+   - Perfect rotation: each player sits out once
+
+3. **Skill Balance Score**:
+   - Average team difference: <1.0 points
+   - 95% of matches should have <1.5 points difference
+
+4. **Variety Metrics**:
+   - Partner repetition rate: <30% (no more than 30% repeated partners)
+   - Opponent repetition rate: <30%
+
+### Success Criteria
+
+The test passes if:
+- ✅ Match count variance ≤1.0
+- ✅ No OTHER match types created
+- ✅ All match types represented (MM, MF, FF)
+- ✅ Average skill difference <1.0 points
+- ✅ Each player waits exactly 1 round (fair rotation)
+- ✅ Each player plays on both courts (3-5 times each)
+- ✅ Partner variety >70% unique
+- ✅ Opponent variety >70% unique
+- ✅ No player partners/faces same person >2 times
+
 ## Running Tests
 
 ```bash
