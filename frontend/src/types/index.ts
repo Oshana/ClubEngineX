@@ -63,7 +63,7 @@ export enum MatchType {
   MM = 'MM',
   MF = 'MF',
   FF = 'FF',
-  OTHER = 'Other',
+  OTHER = 'OTHER',
 }
 
 export interface CourtAssignment {

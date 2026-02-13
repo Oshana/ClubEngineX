@@ -27,6 +27,7 @@ const CourtCard: React.FC<CourtCardProps> = ({ court, allPlayers, isDragDisabled
   };
 
   const renderPlayerCard = (playerId?: number, bgColor: string = 'bg-blue-50', slotId: string) => {
+    const player = getPlayer(playerId);
     const playerName = getPlayerName(playerId);
     const playerLevel = getPlayerLevel(playerId);
     
@@ -66,11 +67,18 @@ const CourtCard: React.FC<CourtCardProps> = ({ court, allPlayers, isDragDisabled
           className="flex items-center justify-between"
         >
           <span>{playerName}</span>
-          {playerLevel && (
-            <span className="px-1.5 py-0.5 bg-blue-200 text-blue-900 text-xs rounded font-medium inline-flex items-center gap-1">
-              🏆 {playerLevel}
-            </span>
-          )}
+          <div className="flex items-center gap-1">
+            {player?.gender && (
+              <span className={`px-1.5 py-0.5 ${player.gender === 'male' ? 'bg-blue-200 text-blue-900' : 'bg-pink-200 text-pink-900'} text-xs rounded font-medium`}>
+                {player.gender === 'male' ? 'M' : 'F'}
+              </span>
+            )}
+            {playerLevel && (
+              <span className="px-1.5 py-0.5 bg-blue-200 text-blue-900 text-xs rounded font-medium inline-flex items-center gap-1">
+                🏆 {playerLevel}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     );

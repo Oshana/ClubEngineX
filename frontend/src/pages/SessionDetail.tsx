@@ -1,12 +1,12 @@
-import { DndContext, DragEndEvent, DragOverlay, DragOverEvent, DragStartEvent, closestCenter, pointerWithin } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, pointerWithin } from '@dnd-kit/core';
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { playersAPI, roundsAPI, sessionsAPI, clubSettingsAPI } from '../api/client';
+import { clubSettingsAPI, playersAPI, roundsAPI, sessionsAPI } from '../api/client';
 import ConfirmDialog from '../components/ConfirmDialog';
 import CourtCard from '../components/CourtCard';
 import WaitingList from '../components/WaitingList';
 import { useNotification } from '../context/NotificationContext';
-import { Player, Round, Session, SessionStats } from '../types';
+import { Attendance, CourtAssignment, MatchType, Player, Round, Session, SessionStats } from '../types';
 
 const SessionDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -43,6 +43,7 @@ const SessionDetail: React.FC = () => {
   const [autoAssignRemaining, setAutoAssignRemaining] = useState(false);
   const [showCancelButton, setShowCancelButton] = useState(false); // Track if Cancel Round button should show
   const [showResetCourtsConfirm, setShowResetCourtsConfirm] = useState(false);
+  const [showClearCourtConfirm, setShowClearCourtConfirm] = useState<{ courtId: number; sourceSlotId: string } | null>(null);
   const [sortBy, setSortBy] = useState<'waiting' | 'played' | 'name' | 'gender' | 'division' | 'mm' | 'mf' | 'ff'>('waiting');
   const [attendanceSortBy, setAttendanceSortBy] = useState<'name' | 'gender' | 'division'>('name');
   const [attendanceSortOrder, setAttendanceSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -51,6 +52,7 @@ const SessionDetail: React.FC = () => {
   const [targetPlayer, setTargetPlayer] = useState<{ id: number; name: string; level?: string } | null>(null);
   const [matchTypePopup, setMatchTypePopup] = useState<{ playerId: number; playerName: string; counts: any; opponentsCount: Record<string, number> } | null>(null);
   const [showAlarmPopup, setShowAlarmPopup] = useState(false);
+  const [showCourtDisplay, setShowCourtDisplay] = useState(false);
   const [activeTab, setActiveTab] = useState<'courts' | 'stats'>('courts');
   const [matchesPlayedSearch, setMatchesPlayedSearch] = useState('');
   const [roundsWaitingSearch, setRoundsWaitingSearch] = useState('');
@@ -454,6 +456,95 @@ const SessionDetail: React.FC = () => {
     setTargetPlayer(null);
   };
 
+  // Handler to clear all players from a court
+  const handleClearCourt = async () => {
+    if (!showClearCourtConfirm || !currentRound) return;
+
+    const { courtId } = showClearCourtConfirm;
+
+    const updatedAssignments = currentRound.court_assignments.map(court => {
+      if (court.id === courtId) {
+        return {
+          ...court,
+          team_a_player1_id: null,
+          team_a_player2_id: null,
+          team_b_player1_id: null,
+          team_b_player2_id: null,
+          match_type: MatchType.OTHER,
+        };
+      }
+      return court;
+    });
+
+    const updatedRound = {
+      ...currentRound,
+      court_assignments: updatedAssignments,
+    };
+    setCurrentRound(updatedRound);
+    setRounds(rounds.map(r => r.id === updatedRound.id ? updatedRound : r));
+
+    try {
+      const court = updatedAssignments.find(c => c.id === courtId);
+      if (court) {
+        await roundsAPI.updateCourtAssignment(court.id, {
+          team_a_player1_id: null,
+          team_a_player2_id: null,
+          team_b_player1_id: null,
+          team_b_player2_id: null,
+          match_type: MatchType.OTHER,
+        });
+      }
+
+      showNotification('success', 'All players moved to waiting list');
+      const statsRes = await sessionsAPI.getStats(sessionId);
+      setStats(statsRes.data);
+    } catch (error) {
+      console.error('Error clearing court:', error);
+      showNotification('error', 'Failed to clear court');
+      const roundsRes = await sessionsAPI.getRounds(sessionId);
+      setRounds(roundsRes.data);
+      setCurrentRound(roundsRes.data.find(r => r.id === currentRound.id) || null);
+    } finally {
+      setShowClearCourtConfirm(null);
+    }
+  };
+
+  // Helper function to calculate match type based on players in a court
+  const calculateMatchType = (court: CourtAssignment): MatchType => {
+    const playerIds = [
+      court.team_a_player1_id,
+      court.team_a_player2_id,
+      court.team_b_player1_id,
+      court.team_b_player2_id,
+    ].filter((id): id is number => id !== null && id !== undefined);
+
+    // If not all 4 players assigned, return OTHER
+    if (playerIds.length !== 4) {
+      return MatchType.OTHER;
+    }
+
+    // Get player genders
+    const genders = playerIds.map(playerId => {
+      const player = allPlayers.find(p => p.id === playerId);
+      return player?.gender || 'unknown';
+    });
+
+    // Count male and female players
+    const maleCount = genders.filter(g => g === 'male').length;
+    const femaleCount = genders.filter(g => g === 'female').length;
+
+    // Determine match type
+    if (maleCount === 4) {
+      return MatchType.MM;
+    } else if (femaleCount === 4) {
+      return MatchType.FF;
+    } else if (maleCount === 2 && femaleCount === 2) {
+      return MatchType.MF;
+    } else {
+      return MatchType.OTHER;
+    }
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     
@@ -496,6 +587,8 @@ const SessionDetail: React.FC = () => {
           const updatedCourt = { ...court };
           const field = `team_${target.team}_player${target.position}_id` as keyof typeof updatedCourt;
           (updatedCourt as any)[field] = sourcePlayerId;
+          // Calculate new match type
+          updatedCourt.match_type = calculateMatchType(updatedCourt);
           return updatedCourt;
         }
         return court;
@@ -517,6 +610,7 @@ const SessionDetail: React.FC = () => {
             team_a_player2_id: court.team_a_player2_id || null,
             team_b_player1_id: court.team_b_player1_id || null,
             team_b_player2_id: court.team_b_player2_id || null,
+            match_type: court.match_type,
           });
         }
         
@@ -535,9 +629,8 @@ const SessionDetail: React.FC = () => {
     }
     
     // Case 2: Dragging from court to waiting list (drop on empty space or another waiting player)
-    if (!sourceIsWaiting && !targetData) {
+    if (!sourceIsWaiting && (!targetData || targetData.isWaitingListArea)) {
       // Dropped somewhere outside courts (likely waiting list area)
-      // Remove player from court
       const parseSlotId = (slotId: string) => {
         const parts = slotId.split('-');
         return {
@@ -548,44 +641,57 @@ const SessionDetail: React.FC = () => {
       };
       
       const source = parseSlotId(sourceSlotId);
+      const waitingPlayers = getWaitingPlayers();
       
-      const updatedAssignments = currentRound.court_assignments.map(court => {
-        if (court.id === source.courtId) {
-          const updatedCourt = { ...court };
-          const field = `team_${source.team}_player${source.position}_id` as keyof typeof updatedCourt;
-          (updatedCourt as any)[field] = null;
-          return updatedCourt;
-        }
-        return court;
-      });
-      
-      const updatedRound = {
-        ...currentRound,
-        court_assignments: updatedAssignments,
-      };
-      setCurrentRound(updatedRound);
-      setRounds(rounds.map(r => r.id === updatedRound.id ? updatedRound : r));
-      
-      try {
-        const court = updatedAssignments.find(c => c.id === source.courtId);
-        if (court) {
-          await roundsAPI.updateCourtAssignment(court.id, {
-            team_a_player1_id: court.team_a_player1_id || null,
-            team_a_player2_id: court.team_a_player2_id || null,
-            team_b_player1_id: court.team_b_player1_id || null,
-            team_b_player2_id: court.team_b_player2_id || null,
-          });
-        }
+      // If there are waiting players, auto-fill the slot with the first waiting player
+      if (waitingPlayers.length > 0) {
+        const firstWaitingPlayer = waitingPlayers[0];
         
-        showNotification('success', 'Player moved to waiting list');
-        const statsRes = await sessionsAPI.getStats(sessionId);
-        setStats(statsRes.data);
-      } catch (error) {
-        console.error('Error updating court assignment:', error);
-        showNotification('error', 'Failed to move player');
-        const roundsRes = await sessionsAPI.getRounds(sessionId);
-        setRounds(roundsRes.data);
-        setCurrentRound(roundsRes.data.find(r => r.id === currentRound.id) || null);
+        const updatedAssignments = currentRound.court_assignments.map(court => {
+          if (court.id === source.courtId) {
+            const updatedCourt = { ...court };
+            const field = `team_${source.team}_player${source.position}_id` as keyof typeof updatedCourt;
+            // Replace with first waiting player
+            (updatedCourt as any)[field] = firstWaitingPlayer.id;
+            // Calculate new match type
+            updatedCourt.match_type = calculateMatchType(updatedCourt);
+            return updatedCourt;
+          }
+          return court;
+        });
+        
+        const updatedRound = {
+          ...currentRound,
+          court_assignments: updatedAssignments,
+        };
+        setCurrentRound(updatedRound);
+        setRounds(rounds.map(r => r.id === updatedRound.id ? updatedRound : r));
+        
+        try {
+          const court = updatedAssignments.find(c => c.id === source.courtId);
+          if (court) {
+            await roundsAPI.updateCourtAssignment(court.id, {
+              team_a_player1_id: court.team_a_player1_id || null,
+              team_a_player2_id: court.team_a_player2_id || null,
+              team_b_player1_id: court.team_b_player1_id || null,
+              team_b_player2_id: court.team_b_player2_id || null,
+              match_type: court.match_type,
+            });
+          }
+          
+          showNotification('success', `${firstWaitingPlayer.full_name} moved to court`);
+          const statsRes = await sessionsAPI.getStats(sessionId);
+          setStats(statsRes.data);
+        } catch (error) {
+          console.error('Error updating court assignment:', error);
+          showNotification('error', 'Failed to update court');
+          const roundsRes = await sessionsAPI.getRounds(sessionId);
+          setRounds(roundsRes.data);
+          setCurrentRound(roundsRes.data.find(r => r.id === currentRound.id) || null);
+        }
+      } else {
+        // No waiting players, show confirmation to clear entire court
+        setShowClearCourtConfirm({ courtId: source.courtId, sourceSlotId });
       }
       
       return;
@@ -625,6 +731,11 @@ const SessionDetail: React.FC = () => {
           (updatedCourt as any)[field] = sourcePlayerId || null;
         }
         
+        // Calculate new match type if this court was affected
+        if (court.id === source.courtId || court.id === target.courtId) {
+          updatedCourt.match_type = calculateMatchType(updatedCourt);
+        }
+        
         return updatedCourt;
       });
 
@@ -647,6 +758,7 @@ const SessionDetail: React.FC = () => {
               team_a_player2_id: court.team_a_player2_id || null,
               team_b_player1_id: court.team_b_player1_id || null,
               team_b_player2_id: court.team_b_player2_id || null,
+              match_type: court.match_type,
             });
           }
         }
@@ -928,11 +1040,24 @@ const SessionDetail: React.FC = () => {
           <div className="lg:col-span-2">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Courts</h2>
-              {currentRound && (
-                <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-sm font-semibold rounded-full">
-                  Round {rounds.findIndex(r => r.id === currentRound.id) + 1}
-                </span>
-              )}
+              <div className="flex items-center gap-3">
+                {currentRound && (
+                  <button
+                    onClick={() => setShowCourtDisplay(true)}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                    Court Display View
+                  </button>
+                )}
+                {currentRound && (
+                  <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-sm font-semibold rounded-full">
+                    Round {rounds.findIndex(r => r.id === currentRound.id) + 1}
+                  </span>
+                )}
+              </div>
             </div>
             <div className="grid gap-4">
               {currentRound?.court_assignments.map((court) => (
@@ -1622,6 +1747,17 @@ const SessionDetail: React.FC = () => {
         onCancel={() => setShowEndRoundConfirm(false)}
       />
 
+      {/* Clear Court Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!showClearCourtConfirm}
+        title="No Waiting Players"
+        message="There are no waiting players available. All players in this court will be moved to the waiting list. Do you want to continue?"
+        confirmLabel="Clear Court"
+        cancelLabel="Cancel"
+        onConfirm={handleClearCourt}
+        onCancel={() => setShowClearCourtConfirm(null)}
+      />
+
       {/* Manual Assignment Modal */}
       {showManualAssignment && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
@@ -2195,6 +2331,138 @@ const SessionDetail: React.FC = () => {
             >
               End Round
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Court Display View Modal */}
+      {showCourtDisplay && currentRound && (
+        <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 z-50 flex flex-col">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 shadow-xl">
+            <div className="max-w-full px-6 py-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="bg-white/20 rounded-lg p-2">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-white">Court Assignments</h1>
+                  <p className="text-sm text-indigo-100">Round {rounds.findIndex(r => r.id === currentRound.id) + 1} • {currentRound.court_assignments.length} Courts Active</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCourtDisplay(false)}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-2 backdrop-blur-sm"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Close
+              </button>
+            </div>
+          </div>
+
+          {/* Courts Grid */}
+          <div className="flex-1 overflow-hidden p-4">
+            <div className="h-full max-w-full mx-auto">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 h-full content-start">
+                {currentRound.court_assignments.map((court) => {
+                  const getPlayer = (playerId?: number) => {
+                    if (!playerId) return null;
+                    return allPlayers.find(p => p.id === playerId);
+                  };
+
+                  const teamAPlayer1 = getPlayer(court.team_a_player1_id);
+                  const teamAPlayer2 = getPlayer(court.team_a_player2_id);
+                  const teamBPlayer1 = getPlayer(court.team_b_player1_id);
+                  const teamBPlayer2 = getPlayer(court.team_b_player2_id);
+
+                  const getMatchTypeColor = (type: string) => {
+                    const colors: Record<string, string> = {
+                      'MM': 'from-blue-500 to-blue-600',
+                      'FF': 'from-pink-500 to-pink-600',
+                      'MF': 'from-purple-500 to-purple-600',
+                      'OTHER': 'from-gray-500 to-gray-600',
+                    };
+                    return colors[type] || 'from-gray-500 to-gray-600';
+                  };
+
+                  return (
+                    <div key={court.id} className="bg-white rounded-xl shadow-2xl overflow-hidden">
+                      {/* Court Header */}
+                      <div className={`bg-gradient-to-r ${getMatchTypeColor(court.match_type)} px-3 py-2 flex items-center justify-between`}>
+                        <h2 className="text-xl font-bold text-white">Court {court.court_number + 1}</h2>
+                        <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm rounded text-white text-xs font-bold">
+                          {court.match_type}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 space-y-2.5">
+                        {/* Team A */}
+                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-2">
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+                            <p className="text-xs font-bold text-blue-900 uppercase tracking-wide">Team A</p>
+                          </div>
+                          <div className="space-y-1.5">
+                            {[teamAPlayer1, teamAPlayer2].map((player, idx) => (
+                              <div key={idx} className="bg-white rounded px-2 py-2 flex items-center justify-between shadow-sm">
+                                <span className="text-sm font-semibold text-gray-900 truncate">
+                                  {player?.full_name || 'Empty'}
+                                </span>
+                                <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                                  {player?.gender && (
+                                    <span className={`px-1.5 py-0.5 ${player.gender === 'male' ? 'bg-blue-200 text-blue-900' : 'bg-pink-200 text-pink-900'} text-xs rounded font-bold`}>
+                                      {player.gender === 'male' ? 'M' : 'F'}
+                                    </span>
+                                  )}
+                                  {player?.level && (
+                                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-900 text-xs rounded font-bold">
+                                      {player.level}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Team B */}
+                        <div className="bg-gradient-to-br from-red-50 to-red-100 border border-red-200 rounded-lg p-2">
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <div className="w-2 h-2 bg-red-600 rounded-full"></div>
+                            <p className="text-xs font-bold text-red-900 uppercase tracking-wide">Team B</p>
+                          </div>
+                          <div className="space-y-1.5">
+                            {[teamBPlayer1, teamBPlayer2].map((player, idx) => (
+                              <div key={idx} className="bg-white rounded px-2 py-2 flex items-center justify-between shadow-sm">
+                                <span className="text-sm font-semibold text-gray-900 truncate">
+                                  {player?.full_name || 'Empty'}
+                                </span>
+                                <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                                  {player?.gender && (
+                                    <span className={`px-1.5 py-0.5 ${player.gender === 'male' ? 'bg-blue-200 text-blue-900' : 'bg-pink-200 text-pink-900'} text-xs rounded font-bold`}>
+                                      {player.gender === 'male' ? 'M' : 'F'}
+                                    </span>
+                                  )}
+                                  {player?.level && (
+                                    <span className="px-1.5 py-0.5 bg-red-100 text-red-900 text-xs rounded font-bold">
+                                      {player.level}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}

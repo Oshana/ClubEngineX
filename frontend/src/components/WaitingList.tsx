@@ -1,6 +1,6 @@
-import { useDraggable } from '@dnd-kit/core';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
 import React from 'react';
-import { Player, SessionStats, Round, Attendance } from '../types';
+import { Attendance, Player, Round, SessionStats } from '../types';
 
 interface WaitingListProps {
   players: Player[];
@@ -40,11 +40,18 @@ const WaitingPlayer: React.FC<WaitingPlayerProps> = ({ player, playerStats, roun
     >
       <div className="font-medium mb-1 flex items-center justify-between gap-2">
         <span className="flex-1">{player.full_name}</span>
-        {player.level && (
-          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs rounded font-medium inline-flex items-center gap-0.5">
-            🏆 {player.level}
-          </span>
-        )}
+        <div className="flex items-center gap-1">
+          {player.gender && (
+            <span className={`px-1.5 py-0.5 ${player.gender === 'male' ? 'bg-blue-200 text-blue-900' : 'bg-pink-200 text-pink-900'} text-xs rounded font-medium`}>
+              {player.gender === 'male' ? 'M' : 'F'}
+            </span>
+          )}
+          {player.level && (
+            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs rounded font-medium inline-flex items-center gap-0.5">
+              🏆 {player.level}
+            </span>
+          )}
+        </div>
       </div>
       {playerStats && (
         <div className="flex items-center gap-2 flex-wrap mb-2">
@@ -125,11 +132,19 @@ const WaitingList: React.FC<WaitingListProps> = ({ players, stats, rounds, atten
     player.full_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Make the waiting list area droppable
+  const { setNodeRef: setDropRef } = useDroppable({
+    id: 'waiting-list-area',
+    data: {
+      isWaitingListArea: true,
+    },
+  });
+
   return (
     <div className="h-[600px] flex flex-col">
       <h2 className="text-xl font-bold mb-4">Waiting List ({filteredPlayers.length})</h2>
       
-      <div className="card flex flex-col flex-1 overflow-hidden">
+      <div ref={setDropRef} className="card flex flex-col flex-1 overflow-hidden">
         <input
           type="text"
           placeholder="Search players..."
