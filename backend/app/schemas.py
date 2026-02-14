@@ -271,6 +271,7 @@ class ClubSettingsBase(BaseModel):
     letter_range_start: Optional[str] = None
     letter_range_end: Optional[str] = None
     custom_levels: Optional[List[str]] = None
+    auto_choose_match_types: bool = False
 
 
 class ClubSettingsCreate(ClubSettingsBase):
@@ -284,6 +285,7 @@ class ClubSettingsUpdate(BaseModel):
     letter_range_start: Optional[str] = None
     letter_range_end: Optional[str] = None
     custom_levels: Optional[List[str]] = None
+    auto_choose_match_types: Optional[bool] = None
 
 
 class ClubSettingsResponse(ClubSettingsBase):

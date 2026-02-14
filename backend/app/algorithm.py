@@ -326,28 +326,91 @@ def auto_assign_courts(
     courts_filled = 0
     max_courts = num_courts_to_fill
     
-    # Strategy: Create valid match types only (MM, FF, MF)
-    # Priority order: prefer MM/FF first, then MF
+    # Use desired match counts if specified, otherwise calculate optimal distribution
+    if preferences.desired_mm > 0 or preferences.desired_ff > 0 or preferences.desired_mf > 0:
+        # Admin has specified exact match type distribution
+        mm_target = preferences.desired_mm
+        ff_target = preferences.desired_ff
+        mf_target = preferences.desired_mf
+    else:
+        # Calculate optimal distribution based on available players
+        total_males = len(males)
+        total_females = len(females)
+        
+        # Aim for a balanced mix: try to create MF matches when both genders are available
+        max_mf_courts = min(total_males // 2, total_females // 2, max_courts)
+        
+        # Prefer variety and mixed matches
+        mf_target = min(max_mf_courts, max_courts)
+        remaining_courts = max_courts - mf_target
+        
+        mm_target = min(total_males // 4, remaining_courts)
+        ff_target = remaining_courts - mm_target
+        
+        # Adjust if we don't have enough females for FF
+        if ff_target * 4 > total_females:
+            ff_target = total_females // 4
+            mm_target = remaining_courts - ff_target
+    
+    mm_courts = 0
+    ff_courts = 0
+    mf_courts = 0
+    
+    # Create matches according to targets
     while courts_filled < max_courts:
-        # Try to create MM (4 males)
-        if len(males) >= 4:
-            selected_players.extend(males[:4])
-            males = males[4:]
-            courts_filled += 1
-        # Try to create FF (4 females)
-        elif len(females) >= 4:
-            selected_players.extend(females[:4])
-            females = females[4:]
-            courts_filled += 1
-        # Try to create MF (2 males + 2 females)
-        elif len(males) >= 2 and len(females) >= 2:
+        made_match = False
+        
+        # Try to create matches in priority order to meet targets
+        # Priority: MF (if under target), then MM (if under target), then FF (if under target)
+        
+        if mf_courts < mf_target and len(males) >= 2 and len(females) >= 2:
+            # Create MF match (2 males + 2 females)
             selected_players.extend(males[:2])
             selected_players.extend(females[:2])
             males = males[2:]
             females = females[2:]
+            mf_courts += 1
             courts_filled += 1
+            made_match = True
+        elif mm_courts < mm_target and len(males) >= 4:
+            # Create MM match (4 males)
+            selected_players.extend(males[:4])
+            males = males[4:]
+            mm_courts += 1
+            courts_filled += 1
+            made_match = True
+        elif ff_courts < ff_target and len(females) >= 4:
+            # Create FF match (4 females)
+            selected_players.extend(females[:4])
+            females = females[4:]
+            ff_courts += 1
+            courts_filled += 1
+            made_match = True
         else:
-            # Not enough players to form a valid match type
+            # Can't meet targets exactly, fill remaining courts with what's available
+            if len(males) >= 4:
+                selected_players.extend(males[:4])
+                males = males[4:]
+                mm_courts += 1
+                courts_filled += 1
+                made_match = True
+            elif len(females) >= 4:
+                selected_players.extend(females[:4])
+                females = females[4:]
+                ff_courts += 1
+                courts_filled += 1
+                made_match = True
+            elif len(males) >= 2 and len(females) >= 2:
+                selected_players.extend(males[:2])
+                selected_players.extend(females[:2])
+                males = males[2:]
+                females = females[2:]
+                mf_courts += 1
+                courts_filled += 1
+                made_match = True
+        
+        if not made_match:
+            # Can't create any more valid matches
             break
     
     # Remaining players wait

@@ -122,7 +122,7 @@ class Round(Base):
 
     # Relationships
     session = relationship("Session", back_populates="rounds")
-    court_assignments = relationship("CourtAssignment", back_populates="round", cascade="all, delete-orphan")
+    court_assignments = relationship("CourtAssignment", back_populates="round", cascade="all, delete-orphan", order_by="CourtAssignment.court_number")
 
 
 class CourtAssignment(Base):
@@ -156,5 +156,6 @@ class ClubSettings(Base):
     letter_range_start = Column(String, nullable=True)  # For LETTER_RANGE type
     letter_range_end = Column(String, nullable=True)  # For LETTER_RANGE type
     custom_levels = Column(ARRAY(String), nullable=True)  # For CUSTOM type, e.g., ["Beginner", "Intermediate", "Advanced"]
+    auto_choose_match_types = Column(Boolean, default=False)  # Auto-select match types for rounds
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

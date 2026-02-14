@@ -1,12 +1,15 @@
+from typing import Dict, List
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from typing import List, Dict
-from pydantic import BaseModel
 
 from ..database import get_db
-from ..models import Session as SessionModel, Round, CourtAssignment, Attendance, AttendanceStatus, Player
-from .auth import get_current_admin
+from ..dependencies import get_current_admin
+from ..models import (Attendance, AttendanceStatus, CourtAssignment, Player,
+                      Round)
+from ..models import Session as SessionModel
 
 router = APIRouter(prefix="/statistics", tags=["statistics"])
 

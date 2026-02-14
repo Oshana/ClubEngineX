@@ -1,4 +1,5 @@
-from app.routers import auth, club_settings, player_portal, players, sessions, statistics
+from app.routers import (auth, club_settings, player_portal, players, sessions,
+                         statistics)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

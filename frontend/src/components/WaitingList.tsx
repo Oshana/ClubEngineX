@@ -88,6 +88,8 @@ const WaitingPlayer: React.FC<WaitingPlayerProps> = ({ player, playerStats, roun
 
 const WaitingList: React.FC<WaitingListProps> = ({ players, stats, rounds, attendanceRecords, isDragDisabled = false }) => {
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [sortBy, setSortBy] = React.useState<'waiting' | 'matches' | null>(null);
+  const [sortAscending, setSortAscending] = React.useState(false);
 
   const getPlayerStats = (playerId: number) => {
     return stats?.player_stats.find(s => s.player_id === playerId);
@@ -132,6 +134,30 @@ const WaitingList: React.FC<WaitingListProps> = ({ players, stats, rounds, atten
     player.full_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Sort players based on selected sort option
+  const sortedPlayers = [...filteredPlayers].sort((a, b) => {
+    if (!sortBy) return 0;
+    
+    const statsA = getPlayerStats(a.id);
+    const statsB = getPlayerStats(b.id);
+    
+    let result = 0;
+    
+    if (sortBy === 'waiting') {
+      // Sort by rounds_sitting_out
+      const waitingA = statsA?.rounds_sitting_out || 0;
+      const waitingB = statsB?.rounds_sitting_out || 0;
+      result = waitingB - waitingA;
+    } else if (sortBy === 'matches') {
+      // Sort by matches_played
+      const matchesA = statsA?.matches_played || 0;
+      const matchesB = statsB?.matches_played || 0;
+      result = matchesA - matchesB;
+    }
+    
+    return sortAscending ? -result : result;
+  });
+
   // Make the waiting list area droppable
   const { setNodeRef: setDropRef } = useDroppable({
     id: 'waiting-list-area',
@@ -142,7 +168,7 @@ const WaitingList: React.FC<WaitingListProps> = ({ players, stats, rounds, atten
 
   return (
     <div className="h-[600px] flex flex-col">
-      <h2 className="text-xl font-bold mb-4">Waiting List ({filteredPlayers.length})</h2>
+      <h2 className="text-xl font-bold mb-4">Waiting List ({sortedPlayers.length})</h2>
       
       <div ref={setDropRef} className="card flex flex-col flex-1 overflow-hidden">
         <input
@@ -153,13 +179,50 @@ const WaitingList: React.FC<WaitingListProps> = ({ players, stats, rounds, atten
           className="w-full px-3 py-2 border border-gray-300 rounded-md mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         
+        <div className="flex gap-2 mb-3">
+          <button
+            onClick={() => {
+              if (sortBy === 'waiting') {
+                setSortAscending(!sortAscending);
+              } else {
+                setSortAscending(false);
+                setSortBy('waiting');
+              }
+            }}
+            className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-colors flex items-center justify-center gap-1 ${
+              sortBy === 'waiting'
+                ? 'bg-orange-500 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Waiting {sortBy === 'waiting' && (sortAscending ? '↓' : '↑')}
+          </button>
+          <button
+            onClick={() => {
+              if (sortBy === 'matches') {
+                setSortAscending(!sortAscending);
+              } else {
+                setSortAscending(false);
+                setSortBy('matches');
+              }
+            }}
+            className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-colors flex items-center justify-center gap-1 ${
+              sortBy === 'matches'
+                ? 'bg-green-500 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Played {sortBy === 'matches' && (sortAscending ? '↑' : '↓')}
+          </button>
+        </div>
+        
         <div className="space-y-3 flex-1 overflow-y-auto">
-        {filteredPlayers.length === 0 ? (
+        {sortedPlayers.length === 0 ? (
           <p className="text-gray-500 text-center">
             {searchQuery ? 'No players found' : 'All players are assigned'}
           </p>
         ) : (
-          filteredPlayers.map((player) => (
+          sortedPlayers.map((player) => (
             <WaitingPlayer
               key={player.id}
               player={player}

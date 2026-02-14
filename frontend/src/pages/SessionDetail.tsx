@@ -44,6 +44,17 @@ const SessionDetail: React.FC = () => {
   const [showCancelButton, setShowCancelButton] = useState(false); // Track if Cancel Round button should show
   const [showResetCourtsConfirm, setShowResetCourtsConfirm] = useState(false);
   const [showClearCourtConfirm, setShowClearCourtConfirm] = useState<{ courtId: number; sourceSlotId: string } | null>(null);
+  const [showMatchCombinationModal, setShowMatchCombinationModal] = useState(false);
+  const [selectedMM, setSelectedMM] = useState(0);
+  const [selectedFF, setSelectedFF] = useState(0);
+  const [selectedMF, setSelectedMF] = useState(0);
+  const [maxMM, setMaxMM] = useState(0);
+  const [maxFF, setMaxFF] = useState(0);
+  const [maxMF, setMaxMF] = useState(0);
+  const [availableMales, setAvailableMales] = useState(0);
+  const [availableFemales, setAvailableFemales] = useState(0);
+  const [autoChooseMatchTypes, setAutoChooseMatchTypes] = useState(false);
+  const [allowManualOverride, setAllowManualOverride] = useState(false);
   const [sortBy, setSortBy] = useState<'waiting' | 'played' | 'name' | 'gender' | 'division' | 'mm' | 'mf' | 'ff'>('waiting');
   const [attendanceSortBy, setAttendanceSortBy] = useState<'name' | 'gender' | 'division'>('name');
   const [attendanceSortOrder, setAttendanceSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -71,6 +82,7 @@ const SessionDetail: React.FC = () => {
     // Load data
     loadData();
     loadClubLevels();
+    loadClubSettings();
   }, [sessionId]);
 
   const loadClubLevels = async () => {
@@ -81,6 +93,15 @@ const SessionDetail: React.FC = () => {
     } catch (error) {
       console.error('Failed to load club levels:', error);
       setAvailableLevels([]);
+    }
+  };
+
+  const loadClubSettings = async () => {
+    try {
+      const response = await clubSettingsAPI.getSettings();
+      setAutoChooseMatchTypes(response.data.auto_choose_match_types || false);
+    } catch (error) {
+      console.error('Failed to load club settings:', error);
     }
   };
 
@@ -218,12 +239,197 @@ const SessionDetail: React.FC = () => {
     }
   };
 
+  const handleAutoAssignClick = () => {
+    if (!session) return;
+    
+    // Calculate available players by gender
+    const presentPlayerIds = attendanceRecords
+      .filter((a) => a.status === 'present')
+      .map((a) => a.player_id);
+    
+    const presentPlayerData = allPlayers.filter((p) => presentPlayerIds.includes(p.id));
+    const males = presentPlayerData.filter((p) => p.gender === 'male').length;
+    const females = presentPlayerData.filter((p) => p.gender === 'female').length;
+    const numCourts = session.number_of_courts;
+    
+    setAvailableMales(males);
+    setAvailableFemales(females);
+    
+    // Calculate all valid combinations that fill exactly numCourts
+    const validCombinations: Array<{ mm: number; ff: number; mf: number }> = [];
+    
+    for (let mm = 0; mm <= numCourts; mm++) {
+      for (let ff = 0; ff <= numCourts - mm; ff++) {
+        const mf = numCourts - mm - ff; // This ensures total = numCourts
+        
+        if (mf >= 0) {
+          const malesNeeded = mm * 4 + mf * 2;
+          const femalesNeeded = ff * 4 + mf * 2;
+          
+          // Check if we have enough players
+          if (malesNeeded <= males && femalesNeeded <= females) {
+            validCombinations.push({ mm, ff, mf });
+          }
+        }
+      }
+    }
+    
+    if (validCombinations.length === 0) {
+      showNotification('error', `Not enough players to fill ${numCourts} courts. Need at least ${numCourts * 4} players or a valid mix.`);
+      return;
+    }
+    
+    // Find the recommended combination (prefer variety, then MF matches)
+    let bestCombo = validCombinations[0];
+    let bestScore = 0;
+    
+    for (const combo of validCombinations) {
+      const variety = (combo.mm > 0 ? 1 : 0) + (combo.ff > 0 ? 1 : 0) + (combo.mf > 0 ? 1 : 0);
+      const score = variety * 100 + combo.mf * 10 + Math.min(combo.mm, combo.ff);
+      if (score > bestScore) {
+        bestScore = score;
+        bestCombo = combo;
+      }
+    }
+    
+    // If auto-choose is enabled and manual override is not active, auto-assign immediately
+    if (autoChooseMatchTypes && !allowManualOverride) {
+      setSelectedMM(bestCombo.mm);
+      setSelectedFF(bestCombo.ff);
+      setSelectedMF(bestCombo.mf);
+      // Call handleAutoAssign directly without showing modal
+      handleAutoAssignWithMatchTypes(bestCombo.mm, bestCombo.ff, bestCombo.mf);
+      return;
+    }
+    
+    // Calculate max values for each type
+    const maxMMPossible = Math.min(Math.floor(males / 4), numCourts);
+    const maxFFPossible = Math.min(Math.floor(females / 4), numCourts);
+    const maxMFPossible = Math.min(Math.floor(males / 2), Math.floor(females / 2), numCourts);
+    
+    setMaxMM(maxMMPossible);
+    setMaxFF(maxFFPossible);
+    setMaxMF(maxMFPossible);
+    setSelectedMM(bestCombo.mm);
+    setSelectedFF(bestCombo.ff);
+    setSelectedMF(bestCombo.mf);
+    setShowMatchCombinationModal(true);
+  };
+
+  const handleMMChange = (mm: number) => {
+    const numCourts = session?.number_of_courts || 0;
+    const remaining = numCourts - mm;
+    
+    // Find valid FF and MF combinations for this MM
+    const validFF: number[] = [];
+    const validMF: number[] = [];
+    
+    for (let ff = 0; ff <= remaining; ff++) {
+      const mf = remaining - ff;
+      const malesNeeded = mm * 4 + mf * 2;
+      const femalesNeeded = ff * 4 + mf * 2;
+      
+      if (malesNeeded <= availableMales && femalesNeeded <= availableFemales) {
+        if (!validFF.includes(ff)) validFF.push(ff);
+        if (!validMF.includes(mf)) validMF.push(mf);
+      }
+    }
+    
+    if (validFF.length === 0 || validMF.length === 0) {
+      // This MM value doesn't allow any valid combinations, revert
+      showNotification('error', `Cannot set ${mm} MM matches - not enough players for valid combinations.`);
+      return;
+    }
+    
+    setSelectedMM(mm);
+    
+    // Try to keep current FF if valid, otherwise use first valid
+    const newFF = validFF.includes(selectedFF) ? selectedFF : validFF[0];
+    const newMF = remaining - newFF;
+    
+    setSelectedFF(newFF);
+    setSelectedMF(newMF);
+  };
+
+  const handleFFChange = (ff: number) => {
+    const numCourts = session?.number_of_courts || 0;
+    const remaining = numCourts - ff;
+    
+    // Find valid MM and MF combinations for this FF
+    const validMM: number[] = [];
+    const validMF: number[] = [];
+    
+    for (let mm = 0; mm <= remaining; mm++) {
+      const mf = remaining - mm;
+      const malesNeeded = mm * 4 + mf * 2;
+      const femalesNeeded = ff * 4 + mf * 2;
+      
+      if (malesNeeded <= availableMales && femalesNeeded <= availableFemales) {
+        if (!validMM.includes(mm)) validMM.push(mm);
+        if (!validMF.includes(mf)) validMF.push(mf);
+      }
+    }
+    
+    if (validMM.length === 0 || validMF.length === 0) {
+      showNotification('error', `Cannot set ${ff} FF matches - not enough players for valid combinations.`);
+      return;
+    }
+    
+    setSelectedFF(ff);
+    
+    // Try to keep current MM if valid, otherwise use first valid
+    const newMM = validMM.includes(selectedMM) ? selectedMM : validMM[0];
+    const newMF = remaining - newMM;
+    
+    setSelectedMM(newMM);
+    setSelectedMF(newMF);
+  };
+
+  const handleMFChange = (mf: number) => {
+    const numCourts = session?.number_of_courts || 0;
+    const remaining = numCourts - mf;
+    
+    // Find valid MM and FF combinations for this MF
+    const validMM: number[] = [];
+    const validFF: number[] = [];
+    
+    for (let mm = 0; mm <= remaining; mm++) {
+      const ff = remaining - mm;
+      const malesNeeded = mm * 4 + mf * 2;
+      const femalesNeeded = ff * 4 + mf * 2;
+      
+      if (malesNeeded <= availableMales && femalesNeeded <= availableFemales) {
+        if (!validMM.includes(mm)) validMM.push(mm);
+        if (!validFF.includes(ff)) validFF.push(ff);
+      }
+    }
+    
+    if (validMM.length === 0 || validFF.length === 0) {
+      showNotification('error', `Cannot set ${mf} MF matches - not enough players for valid combinations.`);
+      return;
+    }
+    
+    setSelectedMF(mf);
+    
+    // Try to keep current MM if valid, otherwise use first valid
+    const newMM = validMM.includes(selectedMM) ? selectedMM : validMM[0];
+    const newFF = remaining - newMM;
+    
+    setSelectedMM(newMM);
+    setSelectedFF(newFF);
+  };
+
   const handleAutoAssign = async () => {
+    setAllowManualOverride(false); // Reset manual override after assignment
+    await handleAutoAssignWithMatchTypes(selectedMM, selectedMF, selectedFF);
+  };
+
+  const handleAutoAssignWithMatchTypes = async (mm: number, mf: number, ff: number) => {
     try {
       const response = await sessionsAPI.autoAssign(sessionId, {
-        desired_mm: 0,
-        desired_mf: 0,
-        desired_ff: 0,
+        desired_mm: mm,
+        desired_mf: mf,
+        desired_ff: ff,
         prioritize_waiting: 1.0,
         prioritize_equal_matches: 1.0,
         avoid_repeat_partners: 0.5,
@@ -233,6 +439,7 @@ const SessionDetail: React.FC = () => {
       // Immediately update currentRound state from response
       setCurrentRound(response.data);
       setShowCancelButton(false); // Don't show Cancel button for auto-assigned rounds
+      setShowMatchCombinationModal(false);
       // Reload data in background
       loadData();
     } catch (error: any) {
@@ -523,25 +730,75 @@ const SessionDetail: React.FC = () => {
       return MatchType.OTHER;
     }
 
-    // Get player genders
-    const genders = playerIds.map(playerId => {
+    // Get player genders for each position
+    const getGender = (playerId: number | null | undefined): string => {
+      if (!playerId) return 'unknown';
       const player = allPlayers.find(p => p.id === playerId);
       return player?.gender || 'unknown';
-    });
+    };
 
-    // Count male and female players
-    const maleCount = genders.filter(g => g === 'male').length;
-    const femaleCount = genders.filter(g => g === 'female').length;
+    const teamA1Gender = getGender(court.team_a_player1_id);
+    const teamA2Gender = getGender(court.team_a_player2_id);
+    const teamB1Gender = getGender(court.team_b_player1_id);
+    const teamB2Gender = getGender(court.team_b_player2_id);
+
+    // Count genders per team
+    const teamAMales = [teamA1Gender, teamA2Gender].filter(g => g === 'male').length;
+    const teamAFemales = [teamA1Gender, teamA2Gender].filter(g => g === 'female').length;
+    const teamBMales = [teamB1Gender, teamB2Gender].filter(g => g === 'male').length;
+    const teamBFemales = [teamB1Gender, teamB2Gender].filter(g => g === 'female').length;
 
     // Determine match type
-    if (maleCount === 4) {
+    const totalMales = teamAMales + teamBMales;
+    const totalFemales = teamAFemales + teamBFemales;
+
+    if (totalMales === 4 && totalFemales === 0) {
       return MatchType.MM;
-    } else if (femaleCount === 4) {
+    } else if (totalFemales === 4 && totalMales === 0) {
       return MatchType.FF;
-    } else if (maleCount === 2 && femaleCount === 2) {
-      return MatchType.MF;
+    } else if (totalMales === 2 && totalFemales === 2) {
+      // For MF match, each team must have exactly 1 male and 1 female
+      if (teamAMales === 1 && teamAFemales === 1 && teamBMales === 1 && teamBFemales === 1) {
+        return MatchType.MF;
+      } else {
+        return MatchType.OTHER;
+      }
     } else {
       return MatchType.OTHER;
+    }
+  };
+
+  // Handler to move a player from court back to waiting list
+  const handleMoveToWaitingList = async (courtId: number, slotName: string) => {
+    if (!currentRound) return;
+
+    // Find the court
+    const court = currentRound.court_assignments.find(c => c.id === courtId);
+    if (!court) return;
+
+    // Create updated court with the slot cleared
+    const updatedCourt: CourtAssignment = {
+      ...court,
+      [slotName]: null,
+    };
+
+    // Recalculate match type
+    updatedCourt.match_type = calculateMatchType(updatedCourt);
+
+    try {
+      // Update court assignment in backend
+      await roundsAPI.updateCourtAssignment(courtId, {
+        team_a_player1_id: updatedCourt.team_a_player1_id || null,
+        team_a_player2_id: updatedCourt.team_a_player2_id || null,
+        team_b_player1_id: updatedCourt.team_b_player1_id || null,
+        team_b_player2_id: updatedCourt.team_b_player2_id || null,
+        match_type: updatedCourt.match_type,
+      });
+
+      // Refresh session data to update UI
+      await loadData();
+    } catch (error) {
+      console.error('Error moving player to waiting list:', error);
     }
   };
 
@@ -830,11 +1087,25 @@ const SessionDetail: React.FC = () => {
           Set Attendance
         </button>
         <button
-          onClick={handleAutoAssign}
+          onClick={handleAutoAssignClick}
           className="btn btn-primary"
         >
           Auto-Assign Round
         </button>
+        
+        {/* Manual Override Toggle - Only show when auto-choose is enabled */}
+        {autoChooseMatchTypes && (
+          <label className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors">
+            <input
+              type="checkbox"
+              checked={allowManualOverride}
+              onChange={(e) => setAllowManualOverride(e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-sm font-medium text-gray-900">Choose match types manually</span>
+          </label>
+        )}
+        
         {currentRound && !currentRound.started_at && (
           <button
             onClick={() => setShowResetCourtsConfirm(true)}
@@ -865,7 +1136,12 @@ const SessionDetail: React.FC = () => {
         </button>
         {currentRound && !currentRound.started_at && (
           <>
-            <button onClick={handleStartRound} className="btn btn-secondary">
+            <button 
+              onClick={handleStartRound} 
+              className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!currentRound.court_assignments || currentRound.court_assignments.length === 0}
+              title={!currentRound.court_assignments || currentRound.court_assignments.length === 0 ? "Assign players to courts before starting the round" : ""}
+            >
               Start Round
             </button>
             {showCancelButton && (
@@ -1066,6 +1342,7 @@ const SessionDetail: React.FC = () => {
                   court={court}
                   allPlayers={allPlayers}
                   isDragDisabled={!!(currentRound?.started_at)}
+                  onRemovePlayer={handleMoveToWaitingList}
                 />
               ))}
               {!currentRound && (
@@ -1417,6 +1694,159 @@ const SessionDetail: React.FC = () => {
             <p className="text-gray-500">No statistics available yet. Start some rounds to see statistics.</p>
           </div>
         )
+      )}
+
+      {/* Match Combination Selection Modal */}
+      {showMatchCombinationModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+            <h2 className="text-2xl font-bold mb-4">Configure Match Types</h2>
+            
+            <p className="text-gray-600 mb-6">
+              Select how many matches of each type to create for this round.
+            </p>
+            
+            {/* Match Type Selectors */}
+            <div className="space-y-4 mb-6">
+              {/* MM Matches */}
+              <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-3 py-1 bg-blue-100 border border-blue-300 rounded text-sm font-medium text-blue-800">
+                      MM
+                    </span>
+                    <span className="font-medium text-gray-900">Male vs Male</span>
+                  </div>
+                  <p className="text-sm text-gray-600">4 males per match</p>
+                </div>
+                <select
+                  value={selectedMM}
+                  onChange={(e) => handleMMChange(parseInt(e.target.value))}
+                  className="ml-4 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  {Array.from({ length: maxMM + 1 }, (_, i) => (
+                    <option key={i} value={i}>{i}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* FF Matches */}
+              <div className="flex items-center justify-between p-4 bg-pink-50 border border-pink-200 rounded-lg">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-3 py-1 bg-pink-100 border border-pink-300 rounded text-sm font-medium text-pink-800">
+                      FF
+                    </span>
+                    <span className="font-medium text-gray-900">Female vs Female</span>
+                  </div>
+                  <p className="text-sm text-gray-600">4 females per match</p>
+                </div>
+                <select
+                  value={selectedFF}
+                  onChange={(e) => handleFFChange(parseInt(e.target.value))}
+                  className="ml-4 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                >
+                  {Array.from({ length: maxFF + 1 }, (_, i) => (
+                    <option key={i} value={i}>{i}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* MF Matches */}
+              <div className="flex items-center justify-between p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-3 py-1 bg-purple-100 border border-purple-300 rounded text-sm font-medium text-purple-800">
+                      MF
+                    </span>
+                    <span className="font-medium text-gray-900">Mixed Doubles</span>
+                  </div>
+                  <p className="text-sm text-gray-600">2 males + 2 females per match</p>
+                </div>
+                <select
+                  value={selectedMF}
+                  onChange={(e) => handleMFChange(parseInt(e.target.value))}
+                  className="ml-4 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                >
+                  {Array.from({ length: maxMF + 1 }, (_, i) => (
+                    <option key={i} value={i}>{i}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Summary */}
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Total Courts</p>
+                  <p className="text-2xl font-bold text-gray-900">{selectedMM + selectedFF + selectedMF}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Players Used</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {selectedMM * 4 + selectedMF * 2}♂ / {selectedFF * 4 + selectedMF * 2}♀
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-gray-300">
+                <p className="text-xs text-gray-500">
+                  Available: {availableMales}♂ / {availableFemales}♀ • Max {session?.number_of_courts} courts
+                </p>
+              </div>
+            </div>
+
+            {/* Auto-Choose Match Types Toggle */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allowManualOverride ? false : autoChooseMatchTypes}
+                  onChange={async (e) => {
+                    const newValue = e.target.checked;
+                    setAutoChooseMatchTypes(newValue);
+                    setAllowManualOverride(false); // Reset manual override when toggling auto-select
+                    try {
+                      await clubSettingsAPI.updateSettings({ auto_choose_match_types: newValue });
+                      showNotification('success', `Auto-selection ${newValue ? 'enabled' : 'disabled'}`);
+                    } catch (error) {
+                      console.error('Failed to update setting:', error);
+                      setAutoChooseMatchTypes(!newValue);
+                      showNotification('error', 'Failed to update setting');
+                    }
+                  }}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="ml-3">
+                  <span className="text-sm font-medium text-gray-900">Auto-select match types for future rounds</span>
+                  <p className="text-xs text-gray-600 mt-1">
+                    When enabled, the system will automatically choose the best match type combination without showing this dialog
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex space-x-2">
+              <button
+                onClick={handleAutoAssign}
+                disabled={selectedMM + selectedFF + selectedMF === 0}
+                className="btn btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Auto-Assign Courts
+              </button>
+              <button
+                onClick={() => {
+                  setShowMatchCombinationModal(false);
+                  setAllowManualOverride(false); // Reset manual override when closing modal
+                }}
+                className="btn btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Attendance Modal */}
@@ -2407,25 +2837,37 @@ const SessionDetail: React.FC = () => {
                             <p className="text-xs font-bold text-blue-900 uppercase tracking-wide">Team A</p>
                           </div>
                           <div className="space-y-1.5">
-                            {[teamAPlayer1, teamAPlayer2].map((player, idx) => (
-                              <div key={idx} className="bg-white rounded px-2 py-2 flex items-center justify-between shadow-sm">
-                                <span className="text-sm font-semibold text-gray-900 truncate">
-                                  {player?.full_name || 'Empty'}
-                                </span>
-                                <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-                                  {player?.gender && (
-                                    <span className={`px-1.5 py-0.5 ${player.gender === 'male' ? 'bg-blue-200 text-blue-900' : 'bg-pink-200 text-pink-900'} text-xs rounded font-bold`}>
-                                      {player.gender === 'male' ? 'M' : 'F'}
-                                    </span>
-                                  )}
-                                  {player?.level && (
-                                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-900 text-xs rounded font-bold">
-                                      {player.level}
-                                    </span>
-                                  )}
+                            {[teamAPlayer1, teamAPlayer2].map((player, idx) => {
+                              const slotName = idx === 0 ? 'team_a_player1_id' : 'team_a_player2_id';
+                              return (
+                                <div key={idx} className="bg-white rounded px-2 py-2 flex items-center justify-between shadow-sm">
+                                  <span className="text-sm font-semibold text-gray-900 truncate">
+                                    {player?.full_name || 'Empty'}
+                                  </span>
+                                  <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                                    {player?.gender && (
+                                      <>
+                                        <span className={`px-1.5 py-0.5 ${player.gender === 'male' ? 'bg-blue-200 text-blue-900' : 'bg-pink-200 text-pink-900'} text-xs rounded font-bold`}>
+                                          {player.gender === 'male' ? 'M' : 'F'}
+                                        </span>
+                                        <button
+                                          onClick={() => handleMoveToWaitingList(court.id, slotName)}
+                                          className="px-1.5 py-1 bg-red-100 hover:bg-red-200 rounded text-red-600 hover:text-red-800 transition-colors text-xs font-bold"
+                                          title="Remove from court"
+                                        >
+                                          ✕
+                                        </button>
+                                      </>
+                                    )}
+                                    {player?.level && (
+                                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-900 text-xs rounded font-bold">
+                                        {player.level}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -2436,25 +2878,37 @@ const SessionDetail: React.FC = () => {
                             <p className="text-xs font-bold text-red-900 uppercase tracking-wide">Team B</p>
                           </div>
                           <div className="space-y-1.5">
-                            {[teamBPlayer1, teamBPlayer2].map((player, idx) => (
-                              <div key={idx} className="bg-white rounded px-2 py-2 flex items-center justify-between shadow-sm">
-                                <span className="text-sm font-semibold text-gray-900 truncate">
-                                  {player?.full_name || 'Empty'}
-                                </span>
-                                <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-                                  {player?.gender && (
-                                    <span className={`px-1.5 py-0.5 ${player.gender === 'male' ? 'bg-blue-200 text-blue-900' : 'bg-pink-200 text-pink-900'} text-xs rounded font-bold`}>
-                                      {player.gender === 'male' ? 'M' : 'F'}
-                                    </span>
-                                  )}
-                                  {player?.level && (
-                                    <span className="px-1.5 py-0.5 bg-red-100 text-red-900 text-xs rounded font-bold">
-                                      {player.level}
-                                    </span>
-                                  )}
+                            {[teamBPlayer1, teamBPlayer2].map((player, idx) => {
+                              const slotName = idx === 0 ? 'team_b_player1_id' : 'team_b_player2_id';
+                              return (
+                                <div key={idx} className="bg-white rounded px-2 py-2 flex items-center justify-between shadow-sm">
+                                  <span className="text-sm font-semibold text-gray-900 truncate">
+                                    {player?.full_name || 'Empty'}
+                                  </span>
+                                  <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                                    {player?.gender && (
+                                      <>
+                                        <span className={`px-1.5 py-0.5 ${player.gender === 'male' ? 'bg-blue-200 text-blue-900' : 'bg-pink-200 text-pink-900'} text-xs rounded font-bold`}>
+                                          {player.gender === 'male' ? 'M' : 'F'}
+                                        </span>
+                                        <button
+                                          onClick={() => handleMoveToWaitingList(court.id, slotName)}
+                                          className="px-1.5 py-1 bg-red-100 hover:bg-red-200 rounded text-red-600 hover:text-red-800 transition-colors text-xs font-bold"
+                                          title="Remove from court"
+                                        >
+                                          ✕
+                                        </button>
+                                      </>
+                                    )}
+                                    {player?.level && (
+                                      <span className="px-1.5 py-0.5 bg-red-100 text-red-900 text-xs rounded font-bold">
+                                        {player.level}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       </div>

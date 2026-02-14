@@ -79,10 +79,12 @@ const Login: React.FC = () => {
           </button>
         </form>
         
-        <div className="mt-4 text-sm text-gray-600">
-          <p className="text-center">Demo Credentials:</p>
-          <p className="text-center">Admin: admin@badmintonclub.com / Admin123!</p>
-          <p className="text-center">Player: player1@badmintonclub.com / Player123!</p>
+        <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <p className="text-center font-medium text-blue-900 mb-2">Login Credentials:</p>
+          <div className="space-y-1 text-center text-blue-800">
+            <p className="font-mono text-sm">Email: admin@example.com</p>
+            <p className="font-mono text-sm">Password: admin123</p>
+          </div>
         </div>
       </div>
     </div>

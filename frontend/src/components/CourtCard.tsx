@@ -6,9 +6,10 @@ interface CourtCardProps {
   court: CourtAssignment;
   allPlayers: Player[];
   isDragDisabled?: boolean;
+  onRemovePlayer?: (courtId: number, slotName: string) => void;
 }
 
-const CourtCard: React.FC<CourtCardProps> = ({ court, allPlayers, isDragDisabled = false }) => {
+const CourtCard: React.FC<CourtCardProps> = ({ court, allPlayers, isDragDisabled = false, onRemovePlayer }) => {
   const getPlayer = (playerId?: number) => {
     if (!playerId) return null;
     return allPlayers.find(p => p.id === playerId);
@@ -26,7 +27,7 @@ const CourtCard: React.FC<CourtCardProps> = ({ court, allPlayers, isDragDisabled
     return player?.level;
   };
 
-  const renderPlayerCard = (playerId?: number, bgColor: string = 'bg-blue-50', slotId: string) => {
+  const renderPlayerCard = (playerId?: number, bgColor: string = 'bg-blue-50', slotId: string, slotName: string) => {
     const player = getPlayer(playerId);
     const playerName = getPlayerName(playerId);
     const playerLevel = getPlayerLevel(playerId);
@@ -60,13 +61,15 @@ const CourtCard: React.FC<CourtCardProps> = ({ court, allPlayers, isDragDisabled
           isDragging ? 'opacity-50' : ''
         } ${playerId ? 'cursor-move' : 'cursor-default'}`}
       >
-        <div
-          ref={setDragRef}
-          {...listeners}
-          {...attributes}
-          className="flex items-center justify-between"
-        >
-          <span>{playerName}</span>
+        <div className="flex items-center justify-between">
+          <div
+            ref={setDragRef}
+            {...listeners}
+            {...attributes}
+            className="flex-1"
+          >
+            <span>{playerName}</span>
+          </div>
           <div className="flex items-center gap-1">
             {player?.gender && (
               <span className={`px-1.5 py-0.5 ${player.gender === 'male' ? 'bg-blue-200 text-blue-900' : 'bg-pink-200 text-pink-900'} text-xs rounded font-medium`}>
@@ -77,6 +80,27 @@ const CourtCard: React.FC<CourtCardProps> = ({ court, allPlayers, isDragDisabled
               <span className="px-1.5 py-0.5 bg-blue-200 text-blue-900 text-xs rounded font-medium inline-flex items-center gap-1">
                 🏆 {playerLevel}
               </span>
+            )}
+            {playerId && onRemovePlayer && (
+              <button
+                onClick={(e) => {
+                  console.log('Remove button clicked!', court.id, slotName);
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onRemovePlayer(court.id, slotName);
+                }}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                }}
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                }}
+                className="px-1.5 py-0.5 bg-red-100 hover:bg-red-200 rounded text-red-600 hover:text-red-800 transition-colors text-xs font-bold cursor-pointer"
+                title="Remove from court"
+                type="button"
+              >
+                ↓
+              </button>
             )}
           </div>
         </div>
@@ -108,8 +132,8 @@ const CourtCard: React.FC<CourtCardProps> = ({ court, allPlayers, isDragDisabled
         <div className="border-2 border-blue-200 rounded p-3">
           <p className="text-sm font-medium text-blue-800 mb-2">Team A</p>
           <div className="space-y-1">
-            {renderPlayerCard(court.team_a_player1_id, 'bg-blue-50', `court-${court.id}-team-a-player-1`)}
-            {renderPlayerCard(court.team_a_player2_id, 'bg-blue-50', `court-${court.id}-team-a-player-2`)}
+            {renderPlayerCard(court.team_a_player1_id, 'bg-blue-50', `court-${court.id}-team-a-player-1`, 'team_a_player1_id')}
+            {renderPlayerCard(court.team_a_player2_id, 'bg-blue-50', `court-${court.id}-team-a-player-2`, 'team_a_player2_id')}
           </div>
         </div>
 
@@ -117,8 +141,8 @@ const CourtCard: React.FC<CourtCardProps> = ({ court, allPlayers, isDragDisabled
         <div className="border-2 border-red-200 rounded p-3">
           <p className="text-sm font-medium text-red-800 mb-2">Team B</p>
           <div className="space-y-1">
-            {renderPlayerCard(court.team_b_player1_id, 'bg-red-50', `court-${court.id}-team-b-player-1`)}
-            {renderPlayerCard(court.team_b_player2_id, 'bg-red-50', `court-${court.id}-team-b-player-2`)}
+            {renderPlayerCard(court.team_b_player1_id, 'bg-red-50', `court-${court.id}-team-b-player-1`, 'team_b_player1_id')}
+            {renderPlayerCard(court.team_b_player2_id, 'bg-red-50', `court-${court.id}-team-b-player-2`, 'team_b_player2_id')}
           </div>
         </div>
       </div>

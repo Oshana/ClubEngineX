@@ -61,7 +61,7 @@ def get_available_levels(
     """Get available levels based on current club settings."""
     settings = db.query(ClubSettings).first()
     if not settings:
-        return AvailableLevelsResponse(levels=[str(i) for i in range(1, 11)])
+        return AvailableLevelsResponse(levels=[str(i) for i in range(1, 11)], recent_sessions=[])
     
     levels = []
     if settings.ranking_system_type == RankingSystemType.INT_RANGE:
