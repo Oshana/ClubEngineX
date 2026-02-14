@@ -91,6 +91,9 @@ const WaitingList: React.FC<WaitingListProps> = ({ players, stats, rounds, atten
   const [sortBy, setSortBy] = React.useState<'waiting' | 'matches' | null>(null);
   const [sortAscending, setSortAscending] = React.useState(false);
 
+  // Check if there are any players in the session at all
+  const hasPlayersInSession = stats && stats.player_stats && stats.player_stats.length > 0;
+
   const getPlayerStats = (playerId: number) => {
     return stats?.player_stats.find(s => s.player_id === playerId);
   };
@@ -219,7 +222,11 @@ const WaitingList: React.FC<WaitingListProps> = ({ players, stats, rounds, atten
         <div className="space-y-3 flex-1 overflow-y-auto">
         {sortedPlayers.length === 0 ? (
           <p className="text-gray-500 text-center">
-            {searchQuery ? 'No players found' : 'All players are assigned'}
+            {searchQuery 
+              ? 'No players found' 
+              : hasPlayersInSession 
+                ? 'All players are assigned' 
+                : 'No players in session'}
           </p>
         ) : (
           sortedPlayers.map((player) => (

@@ -255,27 +255,32 @@ const SessionDetail: React.FC = () => {
     setAvailableMales(males);
     setAvailableFemales(females);
     
-    // Calculate all valid combinations that fill exactly numCourts
+    // Calculate all valid combinations that fill as many courts as possible (up to numCourts)
     const validCombinations: Array<{ mm: number; ff: number; mf: number }> = [];
     
-    for (let mm = 0; mm <= numCourts; mm++) {
-      for (let ff = 0; ff <= numCourts - mm; ff++) {
-        const mf = numCourts - mm - ff; // This ensures total = numCourts
-        
-        if (mf >= 0) {
-          const malesNeeded = mm * 4 + mf * 2;
-          const femalesNeeded = ff * 4 + mf * 2;
+    // Try to fill courts starting from the maximum possible down to 1
+    for (let courtsToFill = numCourts; courtsToFill >= 1; courtsToFill--) {
+      for (let mm = 0; mm <= courtsToFill; mm++) {
+        for (let ff = 0; ff <= courtsToFill - mm; ff++) {
+          const mf = courtsToFill - mm - ff; // This ensures total = courtsToFill
           
-          // Check if we have enough players
-          if (malesNeeded <= males && femalesNeeded <= females) {
-            validCombinations.push({ mm, ff, mf });
+          if (mf >= 0) {
+            const malesNeeded = mm * 4 + mf * 2;
+            const femalesNeeded = ff * 4 + mf * 2;
+            
+            // Check if we have enough players
+            if (malesNeeded <= males && femalesNeeded <= females) {
+              validCombinations.push({ mm, ff, mf });
+            }
           }
         }
       }
+      // If we found valid combinations, stop searching
+      if (validCombinations.length > 0) break;
     }
     
     if (validCombinations.length === 0) {
-      showNotification('error', `Not enough players to fill ${numCourts} courts. Need at least ${numCourts * 4} players or a valid mix.`);
+      showNotification('error', 'Not enough players to fill even one court. Need at least 4 players.');
       return;
     }
     
