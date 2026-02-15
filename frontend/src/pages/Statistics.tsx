@@ -213,7 +213,7 @@ const Statistics: React.FC = () => {
                     {sessionsByDate[date].map((session, index) => {
                       const idleTime = session.session_duration_minutes - session.total_round_duration_minutes;
                       return (
-                      <tr key={session.session_id} className={`hover:bg-gray-50 ${index === sessionsByDate[date].length - 1 ? 'border-b-2 border-gray-200' : ''}`}>
+                      <tr key={`${session.session_id}-${session.session_date}`} className={`hover:bg-gray-50 ${index === sessionsByDate[date].length - 1 ? 'border-b-2 border-gray-200' : ''}`}>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">
                             {session.session_name}
