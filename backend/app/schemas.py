@@ -138,7 +138,7 @@ class SessionUpdate(BaseModel):
 class SessionResponse(SessionBase):
     id: int
     date: datetime
-    status: SessionStatus
+    status: Optional[SessionStatus] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None

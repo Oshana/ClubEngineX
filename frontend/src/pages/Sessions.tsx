@@ -20,7 +20,7 @@ import { Link } from 'react-router-dom';
 import { sessionsAPI } from '../api/client';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useNotification } from '../context/NotificationContext';
-import { Session, SessionStatus } from '../types';
+import { Session } from '../types';
 
 interface SortableSessionProps {
   session: Session;

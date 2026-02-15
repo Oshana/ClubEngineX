@@ -1,9 +1,11 @@
 """Add started_at column to sessions table."""
 import sys
+
 sys.path.insert(0, '.')
 
 from app.database import engine
 from sqlalchemy import text
+
 
 def add_column():
     with engine.connect() as conn:
