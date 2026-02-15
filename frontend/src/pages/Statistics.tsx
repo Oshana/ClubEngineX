@@ -61,6 +61,21 @@ const Statistics: React.FC = () => {
     session.session_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Group sessions by date
+  const sessionsByDate = filteredSessions.reduce((acc, session) => {
+    const date = new Date(session.session_date).toLocaleDateString();
+    if (!acc[date]) {
+      acc[date] = [];
+    }
+    acc[date].push(session);
+    return acc;
+  }, {} as Record<string, typeof filteredSessions>);
+
+  // Sort dates in descending order
+  const sortedDates = Object.keys(sessionsByDate).sort((a, b) => {
+    return new Date(b).getTime() - new Date(a).getTime();
+  });
+
   return (
     <div>
       <h1 className="text-3xl font-bold mb-6">Global Statistics</h1>
@@ -113,7 +128,7 @@ const Statistics: React.FC = () => {
                   Session Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
+                  Time
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Rounds
@@ -138,7 +153,7 @@ const Statistics: React.FC = () => {
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white">
               {filteredSessions.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
@@ -146,52 +161,65 @@ const Statistics: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredSessions.map((session) => (
-                  <tr key={session.session_id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {session.session_name}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
-                        {new Date(session.session_date).toLocaleDateString()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-900">{session.total_rounds}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-900">{session.total_players}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-900">{session.total_matches}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-900">
-                        {session.avg_matches_per_player.toFixed(1)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-900">
-                        {Math.round(session.avg_waiting_time)} min
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-900">
-                        {session.fairness_score.toFixed(2)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-900">
-                        <span className="text-blue-600">{session.match_type_distribution.MM}</span>
-                        {' / '}
-                        <span className="text-purple-600">{session.match_type_distribution.MF}</span>
-                        {' / '}
-                        <span className="text-pink-600">{session.match_type_distribution.FF}</span>
-                      </div>
-                    </td>
-                  </tr>
+                sortedDates.map((date) => (
+                  <React.Fragment key={date}>
+                    {/* Date header row */}
+                    <tr className="bg-gray-100 border-t-2 border-gray-300">
+                      <td colSpan={9} className="px-6 py-2">
+                        <div className="text-sm font-bold text-gray-700">
+                          {date} ({sessionsByDate[date].length} session{sessionsByDate[date].length > 1 ? 's' : ''})
+                        </div>
+                      </td>
+                    </tr>
+                    {/* Sessions for this date */}
+                    {sessionsByDate[date].map((session, index) => (
+                      <tr key={session.session_id} className={`hover:bg-gray-50 ${index === sessionsByDate[date].length - 1 ? 'border-b-2 border-gray-200' : ''}`}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">
+                            {session.session_name}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-500">
+                            {new Date(session.session_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">{session.total_rounds}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">{session.total_players}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">{session.total_matches}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {session.avg_matches_per_player.toFixed(1)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {Math.round(session.avg_waiting_time)} min
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {session.fairness_score.toFixed(2)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            <span className="text-blue-600">{session.match_type_distribution.MM}</span>
+                            {' / '}
+                            <span className="text-purple-600">{session.match_type_distribution.MF}</span>
+                            {' / '}
+                            <span className="text-pink-600">{session.match_type_distribution.FF}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 ))
               )}
             </tbody>
