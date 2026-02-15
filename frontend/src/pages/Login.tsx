@@ -92,7 +92,25 @@ const Login: React.FC = () => {
                 setEmail('admin@example.com');
                 setPassword('admin123');
               }}
-              className="mt-2 w-full text-xs text-purple-600 hover:text-purple-800"
+              className="mt-2 w-full text-xs text-purple-600 hover:text-purple-800 underline"
+            >
+              Click to use these credentials
+            </button>
+          </div>
+
+          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-center font-medium text-blue-900 mb-2">Club Admin Credentials:</p>
+            <div className="space-y-1 text-center text-blue-800">
+              <p className="font-mono text-sm">Email: clubadmin@example.com</p>
+              <p className="font-mono text-sm">Password: clubadmin123</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('clubadmin@example.com');
+                setPassword('clubadmin123');
+              }}
+              className="mt-2 w-full text-xs text-blue-600 hover:text-blue-800 underline"
             >
               Click to use these credentials
             </button>
