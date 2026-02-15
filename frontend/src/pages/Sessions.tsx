@@ -27,10 +27,9 @@ interface SortableSessionProps {
   onEdit: (session: Session) => void;
   onDelete: (id: number) => void;
   onStart: (id: number) => void;
-  getStatusBadge: (status: SessionStatus) => React.ReactNode;
 }
 
-function SortableSession({ session, onEdit, onDelete, onStart, getStatusBadge }: SortableSessionProps) {
+function SortableSession({ session, onEdit, onDelete, onStart }: SortableSessionProps) {
   const {
     attributes,
     listeners,
@@ -87,9 +86,6 @@ function SortableSession({ session, onEdit, onDelete, onStart, getStatusBadge }:
             <p className="text-sm text-gray-500 mt-1">
               {session.number_of_courts} courts • {session.match_duration_minutes} min matches
             </p>
-          </div>
-          <div>
-            {getStatusBadge(session.status)}
           </div>
         </Link>
 
@@ -266,20 +262,6 @@ const Sessions: React.FC = () => {
     }
   };
 
-  const getStatusBadge = (status: SessionStatus) => {
-    const colors = {
-      [SessionStatus.DRAFT]: 'bg-gray-100 text-gray-800',
-      [SessionStatus.ACTIVE]: 'bg-green-100 text-green-800',
-      [SessionStatus.ENDED]: 'bg-blue-100 text-blue-800',
-    };
-    
-    return (
-      <span className={`px-2 py-1 rounded text-xs ${colors[status]}`}>
-        {status}
-      </span>
-    );
-  };
-
   if (loading) {
     return <div className="text-center py-8">Loading...</div>;
   }
@@ -313,7 +295,6 @@ const Sessions: React.FC = () => {
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 onStart={handleStartSession}
-                getStatusBadge={getStatusBadge}
               />
             ))}
           </div>
