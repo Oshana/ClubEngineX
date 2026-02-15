@@ -74,20 +74,34 @@ function SortableSession({ session, onEdit, onDelete, onStart }: SortableSession
         </div>
 
         {/* Session Content */}
-        <Link
-          to={`/sessions/${session.id}`}
-          className="flex-1 flex justify-between items-start"
-        >
-          <div>
-            <h3 className="text-xl font-bold">{session.name}</h3>
-            <p className="text-gray-600 mt-1">
-              {new Date(session.date).toLocaleDateString()}
-            </p>
-            <p className="text-sm text-gray-500 mt-1">
-              {session.number_of_courts} courts • {session.match_duration_minutes} min matches
-            </p>
+        {session.started_at && !session.ended_at ? (
+          <Link
+            to={`/sessions/${session.id}`}
+            className="flex-1 flex justify-between items-start"
+          >
+            <div>
+              <h3 className="text-xl font-bold">{session.name}</h3>
+              <p className="text-gray-600 mt-1">
+                {new Date(session.date).toLocaleDateString()}
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                {session.number_of_courts} courts • {session.match_duration_minutes} min matches
+              </p>
+            </div>
+          </Link>
+        ) : (
+          <div className="flex-1 flex justify-between items-start">
+            <div>
+              <h3 className="text-xl font-bold">{session.name}</h3>
+              <p className="text-gray-600 mt-1">
+                {new Date(session.date).toLocaleDateString()}
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                {session.number_of_courts} courts • {session.match_duration_minutes} min matches
+              </p>
+            </div>
           </div>
-        </Link>
+        )}
 
         {/* Action Buttons */}
         <div className="flex gap-2">
