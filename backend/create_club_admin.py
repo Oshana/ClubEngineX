@@ -36,8 +36,8 @@ def create_club_admin():
             
             # Create club admin user
             result = conn.execute(text(f"""
-                INSERT INTO users (email, hashed_password, full_name, is_admin, is_super_admin, club_id, is_active)
-                VALUES ('clubadmin@example.com', '{hashed_password}', 'Club Admin', true, false, {club_id}, true)
+                INSERT INTO users (email, hashed_password, full_name, is_admin, is_super_admin, club_id, is_active, created_at)
+                VALUES ('clubadmin@example.com', '{hashed_password}', 'Club Admin', true, false, {club_id}, true, CURRENT_TIMESTAMP)
                 RETURNING id, email, full_name;
             """))
             user = result.fetchone()
