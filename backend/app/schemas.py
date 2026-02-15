@@ -140,6 +140,7 @@ class SessionResponse(SessionBase):
     date: datetime
     status: SessionStatus
     created_at: datetime
+    started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
 
     class Config:

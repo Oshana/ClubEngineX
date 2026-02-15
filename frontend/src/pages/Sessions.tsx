@@ -26,10 +26,11 @@ interface SortableSessionProps {
   session: Session;
   onEdit: (session: Session) => void;
   onDelete: (id: number) => void;
+  onStart: (id: number) => void;
   getStatusBadge: (status: SessionStatus) => React.ReactNode;
 }
 
-function SortableSession({ session, onEdit, onDelete, getStatusBadge }: SortableSessionProps) {
+function SortableSession({ session, onEdit, onDelete, onStart, getStatusBadge }: SortableSessionProps) {
   const {
     attributes,
     listeners,
@@ -94,6 +95,20 @@ function SortableSession({ session, onEdit, onDelete, getStatusBadge }: Sortable
 
         {/* Action Buttons */}
         <div className="flex gap-2">
+          {session.status === SessionStatus.DRAFT && (
+            <button
+              onClick={() => onStart(session.id)}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+              title="Start session"
+            >
+              Start
+            </button>
+          )}
+          {session.status === SessionStatus.ACTIVE && (
+            <span className="px-4 py-2 bg-green-100 text-green-800 rounded font-medium">
+              In Progress
+            </span>
+          )}
           <button
             onClick={() => onEdit(session)}
             className="p-2 text-blue-600 hover:bg-blue-50 rounded"
@@ -169,6 +184,20 @@ const Sessions: React.FC = () => {
     } catch (error: any) {
       console.error('Failed to create session:', error);
       const errorMessage = error.response?.data?.detail || 'Failed to create session. Please try again.';
+      showNotification('error', errorMessage);
+    }
+  };
+
+  const handleStartSession = async (sessionId: number) => {
+    try {
+      await sessionsAPI.startSession(sessionId);
+      await loadSessions();
+      showNotification('success', 'Session started successfully!');
+      // Navigate to the session
+      window.location.href = `/sessions/${sessionId}`;
+    } catch (error: any) {
+      console.error('Failed to start session:', error);
+      const errorMessage = error.response?.data?.detail || 'Failed to start session. Please try again.';
       showNotification('error', errorMessage);
     }
   };
@@ -283,6 +312,7 @@ const Sessions: React.FC = () => {
                 session={session}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                onStart={handleStartSession}
                 getStatusBadge={getStatusBadge}
               />
             ))}

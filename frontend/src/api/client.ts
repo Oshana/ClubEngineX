@@ -63,6 +63,7 @@ export const sessionsAPI = {
     return api.post(`/sessions/${id}/rounds/auto_assign`, payload);
   },
   getStats: (id: number) => api.get(`/sessions/${id}/stats`),
+  startSession: (id: number) => api.post(`/sessions/${id}/start`),
 };
 
 // Rounds API

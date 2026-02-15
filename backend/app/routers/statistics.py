@@ -58,6 +58,12 @@ def get_global_statistics(
     session_stats_list = []
     
     for session in sessions:
+        # Calculate session duration from started_at and ended_at
+        session_duration = 0
+        if session.started_at and session.ended_at:
+            session_duration = (session.ended_at - session.started_at).total_seconds() / 60
+            total_duration_minutes += session_duration
+        
         # Get rounds for this session
         rounds = db.query(Round).filter(Round.session_id == session.id).all()
         total_rounds = len(rounds)
@@ -101,7 +107,6 @@ def get_global_statistics(
             # Calculate round duration for waiting time
             if round_obj.started_at and round_obj.ended_at:
                 round_duration = (round_obj.ended_at - round_obj.started_at).total_seconds() / 60
-                total_duration_minutes += round_duration
                 
                 # Track waiting time for players not in this round
                 playing_players = set()

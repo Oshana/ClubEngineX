@@ -107,6 +107,29 @@ def delete_session(
     return None
 
 
+@router.post("/{session_id}/start", response_model=SessionResponse)
+def start_session(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """Start a session by setting started_at timestamp and changing status to ACTIVE."""
+    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+    
+    # Set started_at and update status to ACTIVE
+    session.started_at = datetime.utcnow()
+    session.status = SessionStatus.ACTIVE
+    
+    db.commit()
+    db.refresh(session)
+    return session
+
+
 @router.post("/{session_id}/end", response_model=SessionResponse)
 def end_session(
     session_id: int,
