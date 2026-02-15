@@ -528,6 +528,19 @@ const SessionDetail: React.FC = () => {
     setShowEndRoundConfirm(true);
   };
 
+  const confirmEndRoundDirectly = async () => {
+    if (!currentRound) return;
+    try {
+      await roundsAPI.end(currentRound.id);
+      // Stop and reset timer
+      setIsTimerRunning(false);
+      setTimeRemaining(null);
+      loadData();
+    } catch (error) {
+      console.error('Failed to end round:', error);
+    }
+  };
+
   const confirmEndRound = async () => {
     if (!currentRound) return;
     try {
@@ -2805,7 +2818,7 @@ const SessionDetail: React.FC = () => {
                   alarmAudioContextRef.current = null;
                 }
                 setShowAlarmPopup(false);
-                handleEndRound();
+                confirmEndRoundDirectly();
               }}
               className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-lg"
             >
