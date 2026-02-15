@@ -100,7 +100,12 @@ const Statistics: React.FC = () => {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="text-gray-500 text-sm mb-1">Avg Session Duration</div>
           <div className="text-3xl font-bold text-orange-600">
-            {Math.round(stats.avg_session_duration_minutes)} min
+            {stats.avg_session_duration_minutes < 1 
+              ? `${Math.round(stats.avg_session_duration_minutes * 60)}s`
+              : stats.avg_session_duration_minutes < 60
+                ? `${stats.avg_session_duration_minutes.toFixed(1)} min`
+                : `${Math.floor(stats.avg_session_duration_minutes / 60)}h ${Math.round(stats.avg_session_duration_minutes % 60)}m`
+            }
           </div>
         </div>
       </div>
@@ -200,7 +205,10 @@ const Statistics: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <div className="text-sm text-gray-900">
-                            {Math.round(session.avg_waiting_time)} min
+                            {session.avg_waiting_time < 1 
+                              ? `${Math.round(session.avg_waiting_time * 60)}s`
+                              : `${Math.round(session.avg_waiting_time)} min`
+                            }
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
