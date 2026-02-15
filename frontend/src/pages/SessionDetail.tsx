@@ -552,7 +552,7 @@ const SessionDetail: React.FC = () => {
       setShowEndSessionConfirm(false);
       // Clear temporary players from state
       setTemporaryPlayers([]);
-      showNotification('success', 'Session ended successfully! All rounds and attendance have been cleared.');
+      showNotification('success', 'Session ended successfully! Session data has been preserved for statistics.');
       navigate('/sessions');
     } catch (error: any) {
       console.error('Failed to end session:', error);
@@ -2140,7 +2140,7 @@ const SessionDetail: React.FC = () => {
       <ConfirmDialog
         isOpen={showEndSessionConfirm}
         title="End Session"
-        message="Are you sure you want to end this session? This will clear all rounds, court assignments, and attendance. The session will be reset to a clean state. This action cannot be undone."
+        message="Are you sure you want to end this session? The session will be marked as complete and all data will be preserved for statistics."
         confirmLabel="End Session"
         cancelLabel="Cancel"
         onConfirm={confirmEndSession}

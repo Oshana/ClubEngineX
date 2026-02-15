@@ -113,7 +113,7 @@ def end_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
-    """End a session by clearing all rounds, court assignments, and attendance."""
+    """End a session and preserve data for statistics."""
     session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
     if not session:
         raise HTTPException(
@@ -121,19 +121,19 @@ def end_session(
             detail="Session not found"
         )
     
-    # Delete court assignments first (manually, to avoid foreign key issues)
-    for round_obj in session.rounds:
-        db.query(CourtAssignment).filter(CourtAssignment.round_id == round_obj.id).delete()
+    # Auto-end any active round (started but not ended)
+    active_round = db.query(Round).filter(
+        Round.session_id == session_id,
+        Round.started_at.isnot(None),
+        Round.ended_at.is_(None)
+    ).first()
     
-    # Delete all rounds
-    db.query(Round).filter(Round.session_id == session_id).delete()
+    if active_round:
+        active_round.ended_at = datetime.utcnow()
     
-    # Delete all attendance records
-    db.query(Attendance).filter(Attendance.session_id == session_id).delete()
-    
-    # Update session status to draft
-    session.status = SessionStatus.DRAFT
-    session.ended_at = None
+    # Update session status to ended and set ended timestamp
+    session.status = SessionStatus.ENDED
+    session.ended_at = datetime.utcnow()
     
     db.commit()
     db.refresh(session)
