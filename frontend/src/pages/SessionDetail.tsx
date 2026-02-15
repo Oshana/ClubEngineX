@@ -46,6 +46,8 @@ const SessionDetail: React.FC = () => {
   const [showResetCourtsConfirm, setShowResetCourtsConfirm] = useState(false);
   const [showClearCourtConfirm, setShowClearCourtConfirm] = useState<{ courtId: number; sourceSlotId: string } | null>(null);
   const [showMatchCombinationModal, setShowMatchCombinationModal] = useState(false);
+  const [editingCourts, setEditingCourts] = useState(false);
+  const [newCourtCount, setNewCourtCount] = useState(0);
   const [selectedMM, setSelectedMM] = useState(0);
   const [selectedFF, setSelectedFF] = useState(0);
   const [selectedMF, setSelectedMF] = useState(0);
@@ -596,6 +598,23 @@ const SessionDetail: React.FC = () => {
     }
   };
 
+  const handleUpdateCourts = async () => {
+    if (!session || newCourtCount < 1 || newCourtCount > 20) {
+      showNotification('error', 'Please enter a valid number of courts (1-20)');
+      return;
+    }
+
+    try {
+      await sessionsAPI.update(sessionId, { number_of_courts: newCourtCount });
+      setSession({ ...session, number_of_courts: newCourtCount });
+      setEditingCourts(false);
+      showNotification('success', 'Number of courts updated successfully');
+    } catch (error: any) {
+      console.error('Failed to update courts:', error);
+      showNotification('error', 'Failed to update number of courts');
+    }
+  };
+
   const handleAddTemporaryPlayer = async () => {
     if (!tempPlayerName.trim()) {
       showNotification('error', 'Please enter a player name');
@@ -1126,9 +1145,51 @@ const SessionDetail: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">{session.name}</h1>
-            <p className="text-gray-600">
-              {new Date(session.date).toLocaleDateString()} • {session.number_of_courts} courts
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-gray-600">
+                {new Date(session.date).toLocaleDateString()} • 
+              </p>
+              {editingCourts ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={newCourtCount}
+                    onChange={(e) => setNewCourtCount(parseInt(e.target.value) || 0)}
+                    className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                    autoFocus
+                  />
+                  <span className="text-gray-600 text-sm">courts</span>
+                  <button
+                    onClick={handleUpdateCourts}
+                    className="px-2 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    onClick={() => setEditingCourts(false)}
+                    className="px-2 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="text-gray-600">{session.number_of_courts} courts</p>
+                  <button
+                    onClick={() => {
+                      setNewCourtCount(session.number_of_courts);
+                      setEditingCourts(true);
+                    }}
+                    className="text-blue-500 hover:text-blue-700 text-sm"
+                    title="Edit number of courts"
+                  >
+                    ✏️
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           {session.started_at && !session.ended_at && (
             <div className="bg-green-50 border-2 border-green-500 rounded-lg px-6 py-3">

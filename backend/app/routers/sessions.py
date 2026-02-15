@@ -189,8 +189,8 @@ def end_session(
                 if (court.team_a_player1_id and court.team_a_player2_id and 
                     court.team_b_player1_id and court.team_b_player2_id):
                     total_matches += 1
-                    if court.match_type in match_type_counts:
-                        match_type_counts[court.match_type] += 1
+                    if court.match_type.value in match_type_counts:
+                        match_type_counts[court.match_type.value] += 1
                     
                     for player_id in [court.team_a_player1_id, court.team_a_player2_id,
                                      court.team_b_player1_id, court.team_b_player2_id]:
@@ -227,16 +227,16 @@ def end_session(
         else:
             fairness_score = 10.0
         
-        session_duration = 0
-        if session.ended_at:
-            session_duration = (session.ended_at - session.started_at).total_seconds() / 60
+        # Calculate session duration before setting ended_at
+        ended_at = datetime.utcnow()
+        session_duration = (ended_at - session.started_at).total_seconds() / 60
         
         # Save statistics snapshot
         history = SessionHistory(
             session_id=session.id,
             session_name=session.name,
             started_at=session.started_at,
-            ended_at=session.ended_at,
+            ended_at=ended_at,
             total_rounds=len(rounds),
             total_players=len(player_ids),
             total_matches=total_matches,
