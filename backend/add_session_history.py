@@ -3,10 +3,12 @@
 Migration script to add session_history table for tracking multiple runs of the same session.
 """
 import sys
+
 sys.path.insert(0, '.')
 
 from app.database import engine
 from sqlalchemy import text
+
 
 def run_migration():
     with engine.connect() as conn:

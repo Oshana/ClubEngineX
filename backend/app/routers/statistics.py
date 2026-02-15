@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..dependencies import get_current_admin
 from ..models import (Attendance, AttendanceStatus, CourtAssignment, Player,
-                      Round, SessionHistory)
+                      Round)
 from ..models import Session as SessionModel
+from ..models import SessionHistory
 
 router = APIRouter(prefix="/statistics", tags=["statistics"])
 

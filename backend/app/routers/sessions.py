@@ -7,9 +7,9 @@ from app.algorithm import PlayerStats, auto_assign_courts
 from app.database import get_db
 from app.dependencies import get_current_admin, get_current_user
 from app.models import (Attendance, AttendanceStatus, CourtAssignment, Gender,
-                        MatchType, Player, Round, SessionHistory)
+                        MatchType, Player, Round)
 from app.models import Session as SessionModel
-from app.models import SessionStatus, User
+from app.models import SessionHistory, SessionStatus, User
 from app.schemas import (AttendanceCreate, AttendanceResponse,
                          AutoAssignmentRequest, CourtAssignmentResponse,
                          CourtAssignmentUpdate, PlayerSessionStats,
