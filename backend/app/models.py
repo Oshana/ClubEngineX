@@ -39,18 +39,55 @@ class RankingSystemType(str, enum.Enum):
     CUSTOM = "custom"  # Manually defined levels
 
 
+class SubscriptionStatus(str, enum.Enum):
+    ACTIVE = "active"
+    TRIAL = "trial"
+    EXPIRED = "expired"
+    SUSPENDED = "suspended"
+
+
+class Club(Base):
+    __tablename__ = "clubs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    address = Column(String, nullable=True)
+    contact_email = Column(String, nullable=True)
+    contact_phone = Column(String, nullable=True)
+    
+    # Subscription details
+    subscription_status = Column(SQLEnum(SubscriptionStatus, native_enum=True, values_callable=lambda obj: [e.value for e in obj]), default=SubscriptionStatus.TRIAL)
+    subscription_start_date = Column(DateTime, nullable=True)
+    subscription_end_date = Column(DateTime, nullable=True)
+    max_players = Column(Integer, default=100)
+    max_sessions_per_month = Column(Integer, default=20)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    users = relationship("User", back_populates="club")
+    players = relationship("Player", back_populates="club")
+    sessions = relationship("Session", back_populates="club")
+    settings = relationship("ClubSettings", back_populates="club", uselist=False)
+
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True)  # Null for super admins
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
-    is_admin = Column(Boolean, default=False)
+    is_super_admin = Column(Boolean, default=False)  # Super admin manages all clubs
+    is_admin = Column(Boolean, default=False)  # Club admin
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relationship to player profile
+    # Relationships
+    club = relationship("Club", back_populates="users")
     player = relationship("Player", back_populates="user", uselist=False)
 
 
@@ -58,6 +95,7 @@ class Player(Base):
     __tablename__ = "players"
 
     id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     full_name = Column(String, nullable=False)
     gender = Column(SQLEnum(Gender, native_enum=True, values_callable=lambda obj: [e.value for e in obj]), default=Gender.UNSPECIFIED)
@@ -75,6 +113,7 @@ class Player(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
+    club = relationship("Club", back_populates="players")
     user = relationship("User", back_populates="player")
     attendances = relationship("Attendance", back_populates="player")
 
@@ -83,6 +122,7 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False)
     name = Column(String, nullable=False)
     date = Column(DateTime, default=datetime.utcnow)
     match_duration_minutes = Column(Integer, default=15)
@@ -93,6 +133,7 @@ class Session(Base):
     ended_at = Column(DateTime, nullable=True)
 
     # Relationships
+    club = relationship("Club", back_populates="sessions")
     attendances = relationship("Attendance", back_populates="session", cascade="all, delete-orphan")
     rounds = relationship("Round", back_populates="session", cascade="all, delete-orphan")
 
@@ -151,6 +192,7 @@ class ClubSettings(Base):
     __tablename__ = "club_settings"
 
     id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, unique=True)
     ranking_system_type = Column(SQLEnum(RankingSystemType, native_enum=True, values_callable=lambda obj: [e.value for e in obj]), default=RankingSystemType.CUSTOM)
     int_range_start = Column(Integer, nullable=True)  # For INT_RANGE type
     int_range_end = Column(Integer, nullable=True)  # For INT_RANGE type
@@ -160,6 +202,9 @@ class ClubSettings(Base):
     auto_choose_match_types = Column(Boolean, default=False)  # Auto-select match types for rounds
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationship
+    club = relationship("Club", back_populates="settings")
 
 
 class SessionHistory(Base):

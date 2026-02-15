@@ -96,4 +96,17 @@ export const statisticsAPI = {
   getGlobalStats: () => api.get('/statistics/global'),
 };
 
+// Super Admin API
+export const superAdminAPI = {
+  getDashboard: () => api.get('/super-admin/dashboard'),
+  getClubs: (params?: { skip?: number; limit?: number }) => 
+    api.get('/super-admin/clubs', { params }),
+  getClub: (id: number) => api.get(`/super-admin/clubs/${id}`),
+  createClub: (data: any) => api.post('/super-admin/clubs', data),
+  updateClub: (id: number, data: any) => api.patch(`/super-admin/clubs/${id}`, data),
+  deleteClub: (id: number) => api.delete(`/super-admin/clubs/${id}`),
+  getClubStats: (id: number) => api.get(`/super-admin/clubs/${id}/stats`),
+  getClubAdmins: (id: number) => api.get(`/super-admin/clubs/${id}/admins`),
+};
+
 export default api;

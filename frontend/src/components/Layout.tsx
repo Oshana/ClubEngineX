@@ -15,7 +15,15 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 Badminton Club
               </Link>
               
-              {user?.is_admin && (
+              {user?.is_super_admin && (
+                <>
+                  <Link to="/super-admin" className="text-gray-700 hover:text-primary-600">
+                    Super Admin
+                  </Link>
+                </>
+              )}
+              
+              {user?.is_admin && !user?.is_super_admin && (
                 <>
                   <Link to="/players" className="text-gray-700 hover:text-primary-600">
                     Players
@@ -32,7 +40,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </>
               )}
               
-              {!user?.is_admin && (
+              {!user?.is_admin && !user?.is_super_admin && (
                 <>
                   <Link to="/profile" className="text-gray-700 hover:text-primary-600">
                     My Profile
@@ -46,7 +54,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             
             <div className="flex items-center space-x-4">
               <span className="text-gray-700">{user?.full_name}</span>
-              {user?.is_admin && (
+              {user?.is_super_admin && (
+                <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">
+                  Super Admin
+                </span>
+              )}
+              {user?.is_admin && !user?.is_super_admin && (
                 <span className="px-2 py-1 bg-primary-100 text-primary-800 text-xs rounded">
                   Admin
                 </span>

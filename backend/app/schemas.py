@@ -37,6 +37,55 @@ class RankingSystemType(str, Enum):
     CUSTOM = "custom"
 
 
+class SubscriptionStatus(str, Enum):
+    ACTIVE = "active"
+    TRIAL = "trial"
+    EXPIRED = "expired"
+    SUSPENDED = "suspended"
+
+
+# Club Schemas
+class ClubBase(BaseModel):
+    name: str
+    address: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+
+
+class ClubCreate(ClubBase):
+    subscription_status: SubscriptionStatus = SubscriptionStatus.TRIAL
+    max_players: int = 100
+    max_sessions_per_month: int = 20
+
+
+class ClubUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    subscription_status: Optional[SubscriptionStatus] = None
+    subscription_start_date: Optional[datetime] = None
+    subscription_end_date: Optional[datetime] = None
+    max_players: Optional[int] = None
+    max_sessions_per_month: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class ClubResponse(ClubBase):
+    id: int
+    subscription_status: SubscriptionStatus
+    subscription_start_date: Optional[datetime] = None
+    subscription_end_date: Optional[datetime] = None
+    max_players: int
+    max_sessions_per_month: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # Auth Schemas
 class Token(BaseModel):
     access_token: str
@@ -56,13 +105,17 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     full_name: str
+    club_id: Optional[int] = None  # Required for club admin, null for super admin
+    is_super_admin: bool = False
     is_admin: bool = False
 
 
 class UserResponse(BaseModel):
     id: int
+    club_id: Optional[int] = None
     email: str
     full_name: str
+    is_super_admin: bool
     is_admin: bool
     is_active: bool
     created_at: datetime

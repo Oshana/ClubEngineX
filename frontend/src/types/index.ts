@@ -1,10 +1,35 @@
 export interface User {
   id: number;
+  club_id?: number;
   email: string;
   full_name: string;
+  is_super_admin: boolean;
   is_admin: boolean;
   is_active: boolean;
   created_at: string;
+}
+
+export enum SubscriptionStatus {
+  ACTIVE = 'active',
+  TRIAL = 'trial',
+  EXPIRED = 'expired',
+  SUSPENDED = 'suspended',
+}
+
+export interface Club {
+  id: number;
+  name: string;
+  address?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  subscription_status: SubscriptionStatus;
+  subscription_start_date?: string;
+  subscription_end_date?: string;
+  max_players: number;
+  max_sessions_per_month: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export enum Gender {
