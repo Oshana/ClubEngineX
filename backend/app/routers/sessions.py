@@ -397,6 +397,17 @@ def auto_assign_round(
             detail="Not enough players (minimum 4 required)"
         )
     
+    # Auto-end any active round (started but not ended) before creating a new round
+    active_round = db.query(Round).filter(
+        Round.session_id == session_id,
+        Round.started_at.isnot(None),
+        Round.ended_at.is_(None)
+    ).first()
+    
+    if active_round:
+        active_round.ended_at = datetime.utcnow()
+        db.commit()
+    
     # Check if there's already an unstarted round
     existing_unstarted_round = db.query(Round).filter(
         Round.session_id == session_id,
