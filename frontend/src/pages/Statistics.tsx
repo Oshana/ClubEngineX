@@ -17,6 +17,8 @@ interface SessionStats {
     MF: number;
     FF: number;
   };
+  session_duration_minutes: number;
+  total_round_duration_minutes: number;
 }
 
 interface GlobalStats {
@@ -136,6 +138,15 @@ const Statistics: React.FC = () => {
                   Time
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Session Duration
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Round Duration
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Idle Time
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Rounds
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -161,7 +172,7 @@ const Statistics: React.FC = () => {
             <tbody className="bg-white">
               {filteredSessions.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={12} className="px-6 py-4 text-center text-gray-500">
                     {searchQuery ? 'No sessions found' : 'No sessions yet'}
                   </td>
                 </tr>
@@ -170,14 +181,16 @@ const Statistics: React.FC = () => {
                   <React.Fragment key={date}>
                     {/* Date header row */}
                     <tr className="bg-gray-100 border-t-2 border-gray-300">
-                      <td colSpan={9} className="px-6 py-2">
+                      <td colSpan={12} className="px-6 py-2">
                         <div className="text-sm font-bold text-gray-700">
                           {date} ({sessionsByDate[date].length} session{sessionsByDate[date].length > 1 ? 's' : ''})
                         </div>
                       </td>
                     </tr>
                     {/* Sessions for this date */}
-                    {sessionsByDate[date].map((session, index) => (
+                    {sessionsByDate[date].map((session, index) => {
+                      const idleTime = session.session_duration_minutes - session.total_round_duration_minutes;
+                      return (
                       <tr key={session.session_id} className={`hover:bg-gray-50 ${index === sessionsByDate[date].length - 1 ? 'border-b-2 border-gray-200' : ''}`}>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">
@@ -187,6 +200,42 @@ const Statistics: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-500">
                             {new Date(session.session_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {session.session_duration_minutes > 0 
+                              ? session.session_duration_minutes < 1 
+                                ? `${Math.round(session.session_duration_minutes * 60)}s`
+                                : session.session_duration_minutes < 60
+                                  ? `${session.session_duration_minutes.toFixed(1)} min`
+                                  : `${Math.floor(session.session_duration_minutes / 60)}h ${Math.round(session.session_duration_minutes % 60)}m`
+                              : '-'
+                            }
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {session.total_round_duration_minutes > 0 
+                              ? session.total_round_duration_minutes < 1 
+                                ? `${Math.round(session.total_round_duration_minutes * 60)}s`
+                                : session.total_round_duration_minutes < 60
+                                  ? `${session.total_round_duration_minutes.toFixed(1)} min`
+                                  : `${Math.floor(session.total_round_duration_minutes / 60)}h ${Math.round(session.total_round_duration_minutes % 60)}m`
+                              : '-'
+                            }
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {idleTime > 0 
+                              ? idleTime < 1 
+                                ? `${Math.round(idleTime * 60)}s`
+                                : idleTime < 60
+                                  ? `${idleTime.toFixed(1)} min`
+                                  : `${Math.floor(idleTime / 60)}h ${Math.round(idleTime % 60)}m`
+                              : '-'
+                            }
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -226,7 +275,7 @@ const Statistics: React.FC = () => {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </React.Fragment>
                 ))
               )}

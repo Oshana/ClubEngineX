@@ -87,7 +87,7 @@ class Session(Base):
     date = Column(DateTime, default=datetime.utcnow)
     match_duration_minutes = Column(Integer, default=15)
     number_of_courts = Column(Integer, nullable=False)
-    status = Column(SQLEnum(SessionStatus, native_enum=True, values_callable=lambda obj: [e.value for e in obj]), default=SessionStatus.DRAFT)
+    status = Column(SQLEnum(SessionStatus, native_enum=True, values_callable=lambda obj: [e.value for e in obj]), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     ended_at = Column(DateTime, nullable=True)

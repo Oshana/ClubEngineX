@@ -31,6 +31,8 @@ class SessionStatsResponse(BaseModel):
     avg_waiting_time: float
     fairness_score: float
     match_type_distribution: MatchTypeDistribution
+    session_duration_minutes: float  # Time from Start to End Session button clicks
+    total_round_duration_minutes: float  # Total time of all rounds
 
 
 class GlobalStatsResponse(BaseModel):
@@ -67,6 +69,13 @@ def get_global_statistics(
         # Get rounds for this session
         rounds = db.query(Round).filter(Round.session_id == session.id).all()
         total_rounds = len(rounds)
+        
+        # Calculate total round duration
+        total_round_duration = 0
+        for round_obj in rounds:
+            if round_obj.started_at and round_obj.ended_at:
+                round_duration = (round_obj.ended_at - round_obj.started_at).total_seconds() / 60
+                total_round_duration += round_duration
         
         # Get unique players who attended
         attendance_records = db.query(Attendance).filter(
@@ -151,7 +160,9 @@ def get_global_statistics(
                 MM=match_type_counts.get("MM", 0),
                 MF=match_type_counts.get("MF", 0),
                 FF=match_type_counts.get("FF", 0)
-            )
+            ),
+            session_duration_minutes=round(session_duration, 1),
+            total_round_duration_minutes=round(total_round_duration, 1)
         ))
     
     avg_session_duration = total_duration_minutes / total_sessions if total_sessions > 0 else 0

@@ -113,7 +113,7 @@ def start_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
-    """Start a session by setting started_at timestamp and changing status to ACTIVE."""
+    """Start a session by setting started_at timestamp and changing status to ACTIVE. Clears ended_at for reusability."""
     session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
     if not session:
         raise HTTPException(
@@ -121,8 +121,9 @@ def start_session(
             detail="Session not found"
         )
     
-    # Set started_at and update status to ACTIVE
+    # Set started_at, clear ended_at (for reusability), and update status to ACTIVE
     session.started_at = datetime.utcnow()
+    session.ended_at = None
     session.status = SessionStatus.ACTIVE
     
     db.commit()
