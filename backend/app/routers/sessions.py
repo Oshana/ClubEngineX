@@ -7,7 +7,7 @@ from app.algorithm import PlayerStats, auto_assign_courts
 from app.database import get_db
 from app.dependencies import get_current_admin, get_current_user
 from app.models import (Attendance, AttendanceStatus, CourtAssignment, Gender,
-                        MatchType, Player, Round)
+                        MatchType, Player, Round, SessionHistory)
 from app.models import Session as SessionModel
 from app.models import SessionStatus, User
 from app.schemas import (AttendanceCreate, AttendanceResponse,
@@ -147,7 +147,7 @@ def end_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
-    """End a session and preserve data for statistics."""
+    """End a session, save statistics snapshot, and preserve data."""
     session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
     if not session:
         raise HTTPException(
@@ -164,6 +164,90 @@ def end_session(
     
     if active_round:
         active_round.ended_at = datetime.utcnow()
+    
+    # Calculate and save statistics snapshot before ending
+    if session.started_at:
+        rounds = db.query(Round).filter(Round.session_id == session_id).all()
+        attendance_records = db.query(Attendance).filter(
+            Attendance.session_id == session_id,
+            Attendance.status == AttendanceStatus.PRESENT
+        ).all()
+        
+        player_ids = {att.player_id for att in attendance_records}
+        matches_per_player = {}
+        waiting_times = {}
+        match_type_counts = {"MM": 0, "MF": 0, "FF": 0}
+        total_matches = 0
+        total_round_duration = 0
+        
+        for round_obj in rounds:
+            if round_obj.started_at is None:
+                continue
+            
+            # Count matches
+            for court in round_obj.court_assignments:
+                if (court.team_a_player1_id and court.team_a_player2_id and 
+                    court.team_b_player1_id and court.team_b_player2_id):
+                    total_matches += 1
+                    if court.match_type in match_type_counts:
+                        match_type_counts[court.match_type] += 1
+                    
+                    for player_id in [court.team_a_player1_id, court.team_a_player2_id,
+                                     court.team_b_player1_id, court.team_b_player2_id]:
+                        matches_per_player[player_id] = matches_per_player.get(player_id, 0) + 1
+            
+            # Calculate round duration and waiting time
+            if round_obj.started_at and round_obj.ended_at:
+                round_duration = (round_obj.ended_at - round_obj.started_at).total_seconds() / 60
+                total_round_duration += round_duration
+                
+                playing_players = set()
+                for court in round_obj.court_assignments:
+                    if court.team_a_player1_id:
+                        playing_players.add(court.team_a_player1_id)
+                    if court.team_a_player2_id:
+                        playing_players.add(court.team_a_player2_id)
+                    if court.team_b_player1_id:
+                        playing_players.add(court.team_b_player1_id)
+                    if court.team_b_player2_id:
+                        playing_players.add(court.team_b_player2_id)
+                
+                waiting_players = player_ids - playing_players
+                for player_id in waiting_players:
+                    waiting_times[player_id] = waiting_times.get(player_id, 0) + round_duration
+        
+        avg_matches = sum(matches_per_player.values()) / len(player_ids) if player_ids else 0
+        avg_waiting = sum(waiting_times.values()) / len(player_ids) if player_ids else 0
+        
+        if len(matches_per_player) > 1:
+            match_counts = list(matches_per_player.values())
+            mean = sum(match_counts) / len(match_counts)
+            variance = sum((x - mean) ** 2 for x in match_counts) / len(match_counts)
+            fairness_score = max(0, 10 - variance)
+        else:
+            fairness_score = 10.0
+        
+        session_duration = 0
+        if session.ended_at:
+            session_duration = (session.ended_at - session.started_at).total_seconds() / 60
+        
+        # Save statistics snapshot
+        history = SessionHistory(
+            session_id=session.id,
+            session_name=session.name,
+            started_at=session.started_at,
+            ended_at=session.ended_at,
+            total_rounds=len(rounds),
+            total_players=len(player_ids),
+            total_matches=total_matches,
+            avg_matches_per_player=round(avg_matches, 2),
+            avg_waiting_time=round(avg_waiting, 1),
+            fairness_score=round(fairness_score, 2),
+            session_duration_minutes=round(session_duration, 1),
+            total_round_duration_minutes=round(total_round_duration, 1),
+            match_type_distribution=match_type_counts
+        )
+        db.add(history)
     
     # Update session status to ended and set ended timestamp
     session.status = SessionStatus.ENDED

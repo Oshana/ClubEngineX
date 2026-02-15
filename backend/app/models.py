@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 
 from app.database import Base
-from sqlalchemy import ARRAY, Boolean, Column, DateTime
+from sqlalchemy import ARRAY, Boolean, Column, DateTime, JSON
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import Float, ForeignKey, Integer, String, false
 from sqlalchemy.orm import relationship
@@ -160,3 +160,28 @@ class ClubSettings(Base):
     auto_choose_match_types = Column(Boolean, default=False)  # Auto-select match types for rounds
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SessionHistory(Base):
+    __tablename__ = "session_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    session_name = Column(String, nullable=False)
+    started_at = Column(DateTime, nullable=False)
+    ended_at = Column(DateTime, nullable=False)
+    
+    # Statistics
+    total_rounds = Column(Integer, default=0)
+    total_players = Column(Integer, default=0)
+    total_matches = Column(Integer, default=0)
+    avg_matches_per_player = Column(Float, default=0)
+    avg_waiting_time = Column(Float, default=0)
+    fairness_score = Column(Float, default=0)
+    session_duration_minutes = Column(Float, default=0)
+    total_round_duration_minutes = Column(Float, default=0)
+    
+    # Match type distribution stored as JSON
+    match_type_distribution = Column(JSON, default={"MM": 0, "MF": 0, "FF": 0})
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
