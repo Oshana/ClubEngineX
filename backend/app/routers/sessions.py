@@ -121,7 +121,13 @@ def start_session(
             detail="Session not found"
         )
     
-    # Clear previous session data (rounds and attendance) for a fresh start
+    # Clear previous session data for a fresh start
+    # Delete court assignments first (they reference rounds via foreign key)
+    rounds = db.query(Round).filter(Round.session_id == session_id).all()
+    for round_obj in rounds:
+        db.query(CourtAssignment).filter(CourtAssignment.round_id == round_obj.id).delete()
+    
+    # Now delete rounds and attendance
     db.query(Round).filter(Round.session_id == session_id).delete()
     db.query(Attendance).filter(Attendance.session_id == session_id).delete()
     
