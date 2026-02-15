@@ -37,6 +37,7 @@ const SessionDetail: React.FC = () => {
   const [confirmedSessionPlayers, setConfirmedSessionPlayers] = useState<number[]>([]);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [sessionDuration, setSessionDuration] = useState<number>(0); // Session duration in seconds
   const [showManualAssignment, setShowManualAssignment] = useState(false);
   const [manualAssignments, setManualAssignments] = useState<any[]>([]);
   const [manualSearchQuery, setManualSearchQuery] = useState('');
@@ -150,6 +151,27 @@ const SessionDetail: React.FC = () => {
 
     return () => clearInterval(interval);
   }, [isTimerRunning, timeRemaining]);
+
+  // Session duration timer effect
+  useEffect(() => {
+    if (!session?.started_at || session?.ended_at) {
+      setSessionDuration(0);
+      return;
+    }
+
+    // Calculate initial duration
+    const startTime = new Date(session.started_at).getTime();
+    const now = Date.now();
+    setSessionDuration(Math.floor((now - startTime) / 1000));
+
+    // Update every second
+    const interval = setInterval(() => {
+      const currentTime = Date.now();
+      setSessionDuration(Math.floor((currentTime - startTime) / 1000));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [session?.started_at, session?.ended_at]);
 
   const loadData = async () => {
     try {
@@ -1049,6 +1071,17 @@ const SessionDetail: React.FC = () => {
     return allPlayers; // Guest players with is_temp=true are already included in allPlayers
   };
 
+  const formatSessionDuration = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const getWaitingPlayers = () => {
     if (!currentRound || !stats) return [];
     
@@ -1077,10 +1110,22 @@ const SessionDetail: React.FC = () => {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold">{session.name}</h1>
-        <p className="text-gray-600">
-          {new Date(session.date).toLocaleDateString()} • {session.number_of_courts} courts
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">{session.name}</h1>
+            <p className="text-gray-600">
+              {new Date(session.date).toLocaleDateString()} • {session.number_of_courts} courts
+            </p>
+          </div>
+          {session.started_at && !session.ended_at && (
+            <div className="bg-green-50 border-2 border-green-500 rounded-lg px-6 py-3">
+              <div className="text-sm text-green-700 font-medium">Session Duration</div>
+              <div className="text-3xl font-bold text-green-600 tabular-nums">
+                {formatSessionDuration(sessionDuration)}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Actions */}
