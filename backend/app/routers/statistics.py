@@ -48,8 +48,8 @@ def get_global_statistics(
 ):
     """Get global statistics across all sessions."""
     
-    # Get all sessions
-    sessions = db.query(SessionModel).order_by(SessionModel.date.desc()).all()
+    # Get all sessions ordered by creation time (most recent first)
+    sessions = db.query(SessionModel).order_by(SessionModel.created_at.desc()).all()
     
     total_sessions = len(sessions)
     total_matches_played = 0
@@ -135,7 +135,7 @@ def get_global_statistics(
         session_stats_list.append(SessionStatsResponse(
             session_id=session.id,
             session_name=session.name,
-            session_date=session.date.isoformat(),
+            session_date=session.created_at.isoformat() if session.created_at else session.date.isoformat(),
             total_rounds=total_rounds,
             total_players=total_players,
             total_matches=total_session_matches,
