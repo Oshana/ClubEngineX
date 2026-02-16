@@ -4,8 +4,8 @@ from typing import List
 from app.auth import get_password_hash
 from app.database import get_db
 from app.dependencies import get_current_super_admin
-from app.models import (Club, ClubSettings, Player, Session,
-                        SubscriptionStatus, User, UserRole, RankingSystemType)
+from app.models import (Club, ClubSettings, Player, RankingSystemType, Session,
+                        SubscriptionStatus, User, UserRole)
 from app.schemas import (ClubCreate, ClubResponse, ClubUpdate, UserCreate,
                          UserResponse, UserUpdate)
 from fastapi import APIRouter, Depends, HTTPException, status

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { superAdminAPI } from '../api/client';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useNotification } from '../context/NotificationContext';
 import { Club, SubscriptionStatus, User } from '../types';
-import ConfirmDialog from '../components/ConfirmDialog';
 
 interface ClubStats {
   club_id: number;
