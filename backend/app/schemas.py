@@ -44,6 +44,12 @@ class SubscriptionStatus(str, Enum):
     SUSPENDED = "suspended"
 
 
+class UserRole(str, Enum):
+    SUPER_ADMIN = "super_admin"
+    CLUB_ADMIN = "club_admin"
+    SESSION_MANAGER = "session_manager"
+
+
 # Club Schemas
 class ClubBase(BaseModel):
     name: str
@@ -97,24 +103,37 @@ class TokenData(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    username_or_email: str  # Can be either username or email
     password: str
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    username: str
+    email: Optional[EmailStr] = None
     password: str
     full_name: str
-    club_id: Optional[int] = None  # Required for club admin, null for super admin
-    is_super_admin: bool = False
-    is_admin: bool = False
+    club_id: Optional[int] = None  # Required for club/session roles, null for super admin
+    role: UserRole = UserRole.SESSION_MANAGER
+
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    full_name: Optional[str] = None
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
 
 
 class UserResponse(BaseModel):
     id: int
     club_id: Optional[int] = None
-    email: str
+    username: str
+    email: Optional[str] = None
+    is_email_verified: bool
     full_name: str
+    role: UserRole
+    # Deprecated - kept for backward compatibility
     is_super_admin: bool
     is_admin: bool
     is_active: bool

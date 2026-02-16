@@ -25,6 +25,7 @@ const SuperAdminDashboard: React.FC = () => {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [newClub, setNewClub] = useState({
     name: '',
     address: '',
@@ -55,13 +56,19 @@ const SuperAdminDashboard: React.FC = () => {
   };
 
   const handleCreateClub = async () => {
+    setFormErrors({});
+    
     if (!newClub.name.trim()) {
-      showNotification('error', 'Club name is required');
+      setFormErrors({ name: 'Club name is required' });
       return;
     }
 
     try {
-      await superAdminAPI.createClub(newClub);
+      const submitData = {
+        ...newClub,
+        contact_email: newClub.contact_email.trim() || null
+      };
+      await superAdminAPI.createClub(submitData);
       showNotification('success', 'Club created successfully');
       setShowCreateModal(false);
       setNewClub({
@@ -72,10 +79,21 @@ const SuperAdminDashboard: React.FC = () => {
         max_players: 100,
         max_sessions_per_month: 20,
       });
+      setFormErrors({});
       loadData();
     } catch (error: any) {
       console.error('Failed to create club:', error);
-      showNotification('error', 'Failed to create club');
+      const detail = error.response?.data?.detail;
+      const errorMessage = typeof detail === 'string' ? detail : JSON.stringify(detail) || 'Failed to create club';
+      
+      // Parse error message to determine which field has the issue
+      if (errorMessage.toLowerCase().includes('name already exists') || errorMessage.toLowerCase().includes('name')  && errorMessage.toLowerCase().includes('exists')) {
+        setFormErrors({ name: errorMessage });
+      } else if (errorMessage.toLowerCase().includes('email already') || (errorMessage.toLowerCase().includes('email') && errorMessage.toLowerCase().includes('exists'))) {
+        setFormErrors({ contact_email: errorMessage });
+      } else {
+        showNotification('error', errorMessage);
+      }
     }
   };
 
@@ -204,10 +222,11 @@ const SuperAdminDashboard: React.FC = () => {
                 <input
                   type="text"
                   value={newClub.name}
-                  onChange={(e) => setNewClub({ ...newClub, name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-md"
+                  onChange={(e) => { setNewClub({ ...newClub, name: e.target.value }); setFormErrors({ ...formErrors, name: '' }); }}
+                  className={`w-full px-3 py-2 border rounded-md ${formErrors.name ? 'border-red-500' : ''}`}
                   placeholder="Enter club name"
                 />
+                {formErrors.name && <p className="text-red-500 text-sm mt-1">{formErrors.name}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Address</label>
@@ -224,10 +243,11 @@ const SuperAdminDashboard: React.FC = () => {
                 <input
                   type="email"
                   value={newClub.contact_email}
-                  onChange={(e) => setNewClub({ ...newClub, contact_email: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-md"
+                  onChange={(e) => { setNewClub({ ...newClub, contact_email: e.target.value }); setFormErrors({ ...formErrors, contact_email: '' }); }}
+                  className={`w-full px-3 py-2 border rounded-md ${formErrors.contact_email ? 'border-red-500' : ''}`}
                   placeholder="contact@club.com"
                 />
+                {formErrors.contact_email && <p className="text-red-500 text-sm mt-1">{formErrors.contact_email}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Contact Phone</label>
@@ -262,7 +282,7 @@ const SuperAdminDashboard: React.FC = () => {
               <button onClick={handleCreateClub} className="btn btn-primary flex-1">
                 Create Club
               </button>
-              <button onClick={() => setShowCreateModal(false)} className="btn btn-secondary flex-1">
+              <button onClick={() => { setShowCreateModal(false); setFormErrors({}); }} className="btn btn-secondary flex-1">
                 Cancel
               </button>
             </div>

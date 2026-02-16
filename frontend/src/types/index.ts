@@ -1,10 +1,19 @@
+export enum UserRole {
+  SUPER_ADMIN = 'super_admin',
+  CLUB_ADMIN = 'club_admin',
+  SESSION_MANAGER = 'session_manager',
+}
+
 export interface User {
   id: number;
   club_id?: number;
-  email: string;
+  username: string;
+  email?: string;
+  is_email_verified: boolean;
   full_name: string;
-  is_super_admin: boolean;
-  is_admin: boolean;
+  role: UserRole;
+  is_super_admin: boolean;  // Deprecated, use role instead
+  is_admin: boolean;  // Deprecated, use role instead
   is_active: boolean;
   created_at: string;
 }

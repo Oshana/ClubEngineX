@@ -13,13 +13,40 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=Token)
 def login(user_login: UserLogin, db: Session = Depends(get_db)):
-    """Login endpoint - returns JWT token."""
-    user = db.query(User).filter(User.email == user_login.email).first()
+    """Login endpoint - accepts username or email (email must be verified)."""
+    # Check if input looks like an email
+    is_email = "@" in user_login.username_or_email
     
-    if not user or not verify_password(user_login.password, user.hashed_password):
+    if is_email:
+        # Login with email - must be verified
+        user = db.query(User).filter(User.email == user_login.username_or_email).first()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+            )
+        
+        if not user.is_email_verified:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Email not verified. Please use your username to login.",
+            )
+    else:
+        # Login with username
+        user = db.query(User).filter(User.username == user_login.username_or_email).first()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+            )
+    
+    # Verify password
+    if not verify_password(user_login.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect credentials",
         )
     
     if not user.is_active:
@@ -30,7 +57,7 @@ def login(user_login: UserLogin, db: Session = Depends(get_db)):
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.username}, expires_delta=access_token_expires
     )
     
     return {"access_token": access_token, "token_type": "bearer"}

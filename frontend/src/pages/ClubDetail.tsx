@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { superAdminAPI } from '../api/client';
 import { useNotification } from '../context/NotificationContext';
 import { Club, SubscriptionStatus, User } from '../types';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 interface ClubStats {
   club_id: number;
@@ -27,6 +28,9 @@ const ClubDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState<Partial<Club>>({});
+  const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -52,29 +56,56 @@ const ClubDetail: React.FC = () => {
   };
 
   const handleUpdate = async () => {
+    setFormErrors({});
+    
     try {
-      await superAdminAPI.updateClub(clubId, editData);
+      const submitData = {
+        ...editData,
+        contact_email: editData.contact_email?.trim() || null
+      };
+      await superAdminAPI.updateClub(clubId, submitData);
       showNotification('success', 'Club updated successfully');
       setEditMode(false);
+      setFormErrors({});
       loadData();
     } catch (error: any) {
       console.error('Failed to update club:', error);
-      showNotification('error', 'Failed to update club');
+      const detail = error.response?.data?.detail;
+      const errorMessage = typeof detail === 'string' ? detail : JSON.stringify(detail) || 'Failed to update club';
+      
+      // Parse error message to determine which field has the issue
+      if (errorMessage.toLowerCase().includes('name already exists') || (errorMessage.toLowerCase().includes('name') && errorMessage.toLowerCase().includes('exists'))) {
+        setFormErrors({ name: errorMessage });
+      } else if (errorMessage.toLowerCase().includes('email already') || (errorMessage.toLowerCase().includes('email') && errorMessage.toLowerCase().includes('exists'))) {
+        setFormErrors({ contact_email: errorMessage });
+      } else {
+        showNotification('error', errorMessage);
+      }
     }
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to deactivate this club? This action can be reversed.')) {
-      return;
-    }
-
+    setShowDeleteDialog(false);
     try {
       await superAdminAPI.deleteClub(clubId);
-      showNotification('success', 'Club deactivated successfully');
+      showNotification('success', 'Club deleted successfully');
       navigate('/super-admin');
     } catch (error: any) {
       console.error('Failed to delete club:', error);
-      showNotification('error', 'Failed to deactivate club');
+      showNotification('error', error.response?.data?.detail || 'Failed to delete club');
+    }
+  };
+
+  const handleDeactivate = async () => {
+    setShowDeactivateDialog(false);
+    const action = club?.is_active ? 'deactivate' : 'reactivate';
+    try {
+      await superAdminAPI.toggleClubActive(clubId);
+      showNotification('success', `Club ${action}d successfully`);
+      loadData();
+    } catch (error: any) {
+      console.error(`Failed to ${action} club:`, error);
+      showNotification('error', error.response?.data?.detail || `Failed to ${action} club`);
     }
   };
 
@@ -107,12 +138,18 @@ const ClubDetail: React.FC = () => {
             <p className="text-gray-600">{club.address}</p>
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={() => navigate(`/super-admin/clubs/${id}/admins`)}
+              className="btn btn-secondary"
+            >
+              Manage Admins
+            </button>
             {editMode ? (
               <>
                 <button onClick={handleUpdate} className="btn btn-primary">
                   Save Changes
                 </button>
-                <button onClick={() => setEditMode(false)} className="btn btn-secondary">
+                <button onClick={() => { setEditMode(false); setFormErrors({}); }} className="btn btn-secondary">
                   Cancel
                 </button>
               </>
@@ -121,8 +158,11 @@ const ClubDetail: React.FC = () => {
                 <button onClick={() => setEditMode(true)} className="btn btn-primary">
                   Edit Club
                 </button>
-                <button onClick={handleDelete} className="btn btn-danger">
-                  Deactivate
+                <button onClick={() => setShowDeactivateDialog(true)} className="btn btn-secondary">
+                  {club.is_active ? 'Deactivate' : 'Reactivate'}
+                </button>
+                <button onClick={() => setShowDeleteDialog(true)} className="btn btn-danger">
+                  Delete Club
                 </button>
               </>
             )}
@@ -162,9 +202,10 @@ const ClubDetail: React.FC = () => {
                 <input
                   type="text"
                   value={editData.name || ''}
-                  onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-md"
+                  onChange={(e) => { setEditData({ ...editData, name: e.target.value }); setFormErrors({ ...formErrors, name: '' }); }}
+                  className={`w-full px-3 py-2 border rounded-md ${formErrors.name ? 'border-red-500' : ''}`}
                 />
+                {formErrors.name && <p className="text-red-500 text-sm mt-1">{formErrors.name}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Address</label>
@@ -180,9 +221,10 @@ const ClubDetail: React.FC = () => {
                 <input
                   type="email"
                   value={editData.contact_email || ''}
-                  onChange={(e) => setEditData({ ...editData, contact_email: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-md"
+                  onChange={(e) => { setEditData({ ...editData, contact_email: e.target.value }); setFormErrors({ ...formErrors, contact_email: '' }); }}
+                  className={`w-full px-3 py-2 border rounded-md ${formErrors.contact_email ? 'border-red-500' : ''}`}
                 />
+                {formErrors.contact_email && <p className="text-red-500 text-sm mt-1">{formErrors.contact_email}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Contact Phone</label>
@@ -298,6 +340,30 @@ const ClubDetail: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDeleteDialog}
+        title="Delete Club"
+        message={`Are you sure you want to permanently delete "${club?.name}"? This will remove all associated data including players, sessions, and settings. This action cannot be undone.`}
+        confirmLabel="Delete Permanently"
+        cancelLabel="Cancel"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteDialog(false)}
+        danger={true}
+      />
+
+      {/* Deactivate/Reactivate Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDeactivateDialog}
+        title={club?.is_active ? 'Deactivate Club' : 'Reactivate Club'}
+        message={`Are you sure you want to ${club?.is_active ? 'deactivate' : 'reactivate'} "${club?.name}"?${club?.is_active ? ' Users will not be able to access this club while it is deactivated.' : ''}`}
+        confirmLabel={club?.is_active ? 'Deactivate' : 'Reactivate'}
+        cancelLabel="Cancel"
+        onConfirm={handleDeactivate}
+        onCancel={() => setShowDeactivateDialog(false)}
+        danger={club?.is_active}
+      />
     </div>
   );
 };

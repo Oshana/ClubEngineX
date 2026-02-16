@@ -3,6 +3,7 @@ Script to make a user a super admin
 Usage: python make_super_admin.py <email>
 """
 import sys
+
 from sqlalchemy import text
 
 sys.path.insert(0, '.')

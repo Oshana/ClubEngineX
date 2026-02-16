@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { clubSettingsAPI } from '../api/client';
+import SessionManagersManager from '../components/SessionManagersManager';
+import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
+import { UserRole } from '../types';
 
 type RankingSystemType = 'int_range' | 'letter_range' | 'custom';
 
@@ -17,6 +20,7 @@ interface ClubSettings {
 }
 
 const Settings: React.FC = () => {
+  const { user } = useAuth();
   const [settings, setSettings] = useState<ClubSettings | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [rankingType, setRankingType] = useState<RankingSystemType>('custom');
@@ -264,6 +268,13 @@ const Settings: React.FC = () => {
             Save Settings
           </button>
           </div>
+        </div>
+      )}
+
+      {/* Session Managers Management - Only for Club Admins */}
+      {user?.role === UserRole.CLUB_ADMIN && (
+        <div className="mt-8">
+          <SessionManagersManager />
         </div>
       )}
     </div>

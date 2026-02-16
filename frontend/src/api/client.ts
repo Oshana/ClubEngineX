@@ -25,8 +25,8 @@ api.interceptors.request.use(
 
 // Auth API
 export const authAPI = {
-  login: (email: string, password: string) =>
-    api.post('/auth/login', { email, password }),
+  login: (usernameOrEmail: string, password: string) =>
+    api.post('/auth/login', { username_or_email: usernameOrEmail, password }),
   register: (data: { email: string; password: string; full_name: string; is_admin: boolean }) =>
     api.post('/auth/register', data),
 };
@@ -105,6 +105,7 @@ export const superAdminAPI = {
   createClub: (data: any) => api.post('/super-admin/clubs', data),
   updateClub: (id: number, data: any) => api.patch(`/super-admin/clubs/${id}`, data),
   deleteClub: (id: number) => api.delete(`/super-admin/clubs/${id}`),
+  toggleClubActive: (id: number) => api.patch(`/super-admin/clubs/${id}/toggle-active`),
   getClubStats: (id: number) => api.get(`/super-admin/clubs/${id}/stats`),
   getClubAdmins: (id: number) => api.get(`/super-admin/clubs/${id}/admins`),
 };

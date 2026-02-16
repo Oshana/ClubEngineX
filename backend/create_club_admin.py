@@ -2,6 +2,7 @@
 Script to create a test club admin user
 """
 import sys
+
 from sqlalchemy import text
 
 sys.path.insert(0, '.')

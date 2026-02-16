@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import NotificationToast from './components/NotificationToast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import ClubAdminsManager from './pages/ClubAdminsManager';
 import ClubDetail from './pages/ClubDetail';
 import Login from './pages/Login';
 import PlayerProfile from './pages/PlayerProfile';
@@ -13,6 +14,7 @@ import Sessions from './pages/Sessions';
 import Settings from './pages/Settings';
 import Statistics from './pages/Statistics';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import { UserRole } from './types';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -31,7 +33,19 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
-  return user?.is_admin || user?.is_super_admin ? <>{children}</> : <Navigate to="/" />;
+  // Allow club admins and session managers
+  return user?.role && [UserRole.SUPER_ADMIN, UserRole.CLUB_ADMIN, UserRole.SESSION_MANAGER].includes(user.role) ? <>{children}</> : <Navigate to="/" />;
+};
+
+const ClubAdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  // Only club admins and super admins
+  return user?.role && [UserRole.SUPER_ADMIN, UserRole.CLUB_ADMIN].includes(user.role) ? <>{children}</> : <Navigate to="/" />;
 };
 
 const SuperAdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -41,17 +55,21 @@ const SuperAdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) 
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
-  return user?.is_super_admin ? <>{children}</> : <Navigate to="/" />;
+  return user?.role === UserRole.SUPER_ADMIN ? <>{children}</> : <Navigate to="/" />;
 };
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
 
-  if (user?.is_super_admin) {
+  if (user?.role === UserRole.SUPER_ADMIN) {
     return <Navigate to="/super-admin" />;
   }
 
-  if (user?.is_admin) {
+  if (user?.role === UserRole.CLUB_ADMIN) {
+    return <Navigate to="/sessions" />;
+  }
+
+  if (user?.role === UserRole.SESSION_MANAGER) {
     return <Navigate to="/sessions" />;
   }
 
@@ -79,22 +97,22 @@ function App() {
             <Route
               path="/players"
               element={
-                <AdminRoute>
+                <ClubAdminRoute>
                   <Layout>
                     <Players />
                   </Layout>
-                </AdminRoute>
+                </ClubAdminRoute>
               }
             />
             
             <Route
               path="/sessions"
               element={
-                <PrivateRoute>
+                <AdminRoute>
                   <Layout>
                     <Sessions />
                   </Layout>
-                </PrivateRoute>
+                </AdminRoute>
               }
             />
             
@@ -112,22 +130,22 @@ function App() {
             <Route
               path="/settings"
               element={
-                <AdminRoute>
+                <ClubAdminRoute>
                   <Layout>
                     <Settings />
                   </Layout>
-                </AdminRoute>
+                </ClubAdminRoute>
               }
             />
             
             <Route
               path="/statistics"
               element={
-                <AdminRoute>
+                <ClubAdminRoute>
                   <Layout>
                     <Statistics />
                   </Layout>
-                </AdminRoute>
+                </ClubAdminRoute>
               }
             />
             
@@ -159,6 +177,17 @@ function App() {
                 <SuperAdminRoute>
                   <Layout>
                     <ClubDetail />
+                  </Layout>
+                </SuperAdminRoute>
+              }
+            />
+            
+            <Route
+              path="/super-admin/clubs/:clubId/admins"
+              element={
+                <SuperAdminRoute>
+                  <Layout>
+                    <ClubAdminsManager />
                   </Layout>
                 </SuperAdminRoute>
               }

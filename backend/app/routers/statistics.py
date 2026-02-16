@@ -6,7 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..dependencies import get_current_admin
+from ..dependencies import get_current_club_admin
 from ..models import (Attendance, AttendanceStatus, CourtAssignment, Player,
                       Round)
 from ..models import Session as SessionModel
@@ -47,12 +47,21 @@ class GlobalStatsResponse(BaseModel):
 @router.get("/global", response_model=GlobalStatsResponse)
 def get_global_statistics(
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_admin)
+    current_user = Depends(get_current_club_admin)
 ):
-    """Get global statistics across all sessions including historical runs."""
+    """Get global statistics across all sessions for the current user's club including historical runs."""
+    
+    # Build query for session history
+    query = db.query(SessionHistory)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        # Join with Session to filter by club_id
+        query = query.join(SessionModel, SessionHistory.session_id == SessionModel.id)
+        query = query.filter(SessionModel.club_id == current_user.club_id)
     
     # Get session history (completed runs)
-    session_histories = db.query(SessionHistory).order_by(SessionHistory.started_at.desc()).all()
+    session_histories = query.order_by(SessionHistory.started_at.desc()).all()
     
     total_sessions = len(session_histories)
     total_matches_played = 0

@@ -2,6 +2,7 @@
 Migration script to add multi-club support
 """
 import sys
+
 from sqlalchemy import text
 
 sys.path.insert(0, '.')

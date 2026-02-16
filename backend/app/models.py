@@ -46,13 +46,19 @@ class SubscriptionStatus(str, enum.Enum):
     SUSPENDED = "suspended"
 
 
+class UserRole(str, enum.Enum):
+    SUPER_ADMIN = "super_admin"  # Manages all clubs, appoints club admins
+    CLUB_ADMIN = "club_admin"    # Full club access: settings, players, statistics, sessions
+    SESSION_MANAGER = "session_manager"  # Only manages sessions for their club
+
+
 class Club(Base):
     __tablename__ = "clubs"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
+    name = Column(String, nullable=False, unique=True, index=True)
     address = Column(String, nullable=True)
-    contact_email = Column(String, nullable=True)
+    contact_email = Column(String, nullable=True, unique=True, index=True)
     contact_phone = Column(String, nullable=True)
     
     # Subscription details
@@ -67,10 +73,10 @@ class Club(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    users = relationship("User", back_populates="club")
-    players = relationship("Player", back_populates="club")
-    sessions = relationship("Session", back_populates="club")
-    settings = relationship("ClubSettings", back_populates="club", uselist=False)
+    users = relationship("User", back_populates="club", cascade="all, delete-orphan")
+    players = relationship("Player", back_populates="club", cascade="all, delete-orphan")
+    sessions = relationship("Session", back_populates="club", cascade="all, delete-orphan")
+    settings = relationship("ClubSettings", back_populates="club", uselist=False, cascade="all, delete-orphan")
 
 
 class User(Base):
@@ -78,11 +84,15 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True)  # Null for super admins
-    email = Column(String, unique=True, index=True, nullable=False)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=True)
+    is_email_verified = Column(Boolean, default=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
-    is_super_admin = Column(Boolean, default=False)  # Super admin manages all clubs
-    is_admin = Column(Boolean, default=False)  # Club admin
+    role = Column(SQLEnum(UserRole, native_enum=True, values_callable=lambda obj: [e.value for e in obj]), default=UserRole.SESSION_MANAGER)
+    # Deprecated fields - kept for backward compatibility, use role instead
+    is_super_admin = Column(Boolean, default=False)
+    is_admin = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

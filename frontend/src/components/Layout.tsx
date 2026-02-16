@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { UserRole } from '../types';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout } = useAuth();
@@ -15,7 +16,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 Badminton Club
               </Link>
               
-              {user?.is_super_admin && (
+              {user?.role === UserRole.SUPER_ADMIN && (
                 <>
                   <Link to="/super-admin" className="text-gray-700 hover:text-primary-600">
                     Super Admin
@@ -23,7 +24,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </>
               )}
               
-              {user?.is_admin && !user?.is_super_admin && (
+              {user?.role === UserRole.CLUB_ADMIN && (
                 <>
                   <Link to="/players" className="text-gray-700 hover:text-primary-600">
                     Players
@@ -40,13 +41,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </>
               )}
               
-              {!user?.is_admin && !user?.is_super_admin && (
+              {user?.role === UserRole.SESSION_MANAGER && (
                 <>
-                  <Link to="/profile" className="text-gray-700 hover:text-primary-600">
-                    My Profile
-                  </Link>
                   <Link to="/sessions" className="text-gray-700 hover:text-primary-600">
-                    My Sessions
+                    Sessions
                   </Link>
                 </>
               )}
@@ -54,14 +52,19 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             
             <div className="flex items-center space-x-4">
               <span className="text-gray-700">{user?.full_name}</span>
-              {user?.is_super_admin && (
+              {user?.role === UserRole.SUPER_ADMIN && (
                 <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">
                   Super Admin
                 </span>
               )}
-              {user?.is_admin && !user?.is_super_admin && (
+              {user?.role === UserRole.CLUB_ADMIN && (
                 <span className="px-2 py-1 bg-primary-100 text-primary-800 text-xs rounded">
-                  Admin
+                  Club Admin
+                </span>
+              )}
+              {user?.role === UserRole.SESSION_MANAGER && (
+                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">
+                  Session Manager
                 </span>
               )}
               <button onClick={logout} className="btn btn-secondary">

@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (usernameOrEmail: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -22,7 +22,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Fetch user profile
       playerPortalAPI.getProfile()
         .then(response => {
-          setUser(response.data);
+          const userData = response.data;
+          // Handle missing role field for backward compatibility
+          if (!userData.role) {
+            // Map old fields to new role
+            if (userData.is_super_admin) {
+              userData.role = 'super_admin';
+            } else if (userData.is_admin) {
+              userData.role = 'club_admin';
+            } else {
+              userData.role = 'session_manager';
+            }
+          }
+          setUser(userData);
         })
         .catch(() => {
           // Token invalid, clear it
@@ -37,8 +49,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [token]);
 
-  const login = async (email: string, password: string) => {
-    const response = await authAPI.login(email, password);
+  const login = async (usernameOrEmail: string, password: string) => {
+    const response = await authAPI.login(usernameOrEmail, password);
     const { access_token } = response.data;
     
     localStorage.setItem('token', access_token);
@@ -46,7 +58,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     // Fetch user profile
     const userResponse = await playerPortalAPI.getProfile();
-    setUser(userResponse.data);
+    const userData = userResponse.data;
+    
+    // Handle missing role field for backward compatibility
+    if (!userData.role) {
+      if (userData.is_super_admin) {
+        userData.role = 'super_admin';
+      } else if (userData.is_admin) {
+        userData.role = 'club_admin';
+      } else {
+        userData.role = 'session_manager';
+      }
+    }
+    
+    setUser(userData);
   };
 
   const logout = () => {

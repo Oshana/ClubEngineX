@@ -29,8 +29,14 @@ def get_sessions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
-    """Get all sessions."""
-    sessions = db.query(SessionModel).order_by(SessionModel.created_at.desc()).offset(skip).limit(limit).all()
+    """Get all sessions for the current user's club."""
+    query = db.query(SessionModel)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        query = query.filter(SessionModel.club_id == current_user.club_id)
+    
+    sessions = query.order_by(SessionModel.created_at.desc()).offset(skip).limit(limit).all()
     return sessions
 
 
@@ -41,7 +47,13 @@ def get_session(
     current_user: User = Depends(get_current_user)
 ):
     """Get a specific session by ID."""
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    query = db.query(SessionModel).filter(SessionModel.id == session_id)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        query = query.filter(SessionModel.club_id == current_user.club_id)
+    
+    session = query.first()
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -57,7 +69,17 @@ def create_session(
     current_user: User = Depends(get_current_admin)
 ):
     """Create a new session."""
-    new_session = SessionModel(**session.dict())
+    # Ensure club_id is set from the current user
+    if current_user.club_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be associated with a club to create sessions"
+        )
+    
+    session_data = session.dict()
+    session_data['club_id'] = current_user.club_id
+    
+    new_session = SessionModel(**session_data)
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
@@ -72,7 +94,13 @@ def update_session(
     current_user: User = Depends(get_current_admin)
 ):
     """Update a session."""
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    query = db.query(SessionModel).filter(SessionModel.id == session_id)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        query = query.filter(SessionModel.club_id == current_user.club_id)
+    
+    session = query.first()
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -95,7 +123,13 @@ def delete_session(
     current_user: User = Depends(get_current_admin)
 ):
     """Delete a session."""
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    query = db.query(SessionModel).filter(SessionModel.id == session_id)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        query = query.filter(SessionModel.club_id == current_user.club_id)
+    
+    session = query.first()
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -114,7 +148,13 @@ def start_session(
     current_user: User = Depends(get_current_admin)
 ):
     """Start a session by setting started_at timestamp and changing status to ACTIVE. Clears previous session data for fresh start."""
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    query = db.query(SessionModel).filter(SessionModel.id == session_id)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        query = query.filter(SessionModel.club_id == current_user.club_id)
+    
+    session = query.first()
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -148,7 +188,13 @@ def end_session(
     current_user: User = Depends(get_current_admin)
 ):
     """End a session, save statistics snapshot, and preserve data."""
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    query = db.query(SessionModel).filter(SessionModel.id == session_id)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        query = query.filter(SessionModel.club_id == current_user.club_id)
+    
+    session = query.first()
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -266,7 +312,13 @@ def set_attendance(
     current_user: User = Depends(get_current_admin)
 ):
     """Set present players for a session."""
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    query = db.query(SessionModel).filter(SessionModel.id == session_id)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        query = query.filter(SessionModel.club_id == current_user.club_id)
+    
+    session = query.first()
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -456,7 +508,13 @@ def get_attendance(
     current_user: User = Depends(get_current_user)
 ):
     """Get attendance for a session."""
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    query = db.query(SessionModel).filter(SessionModel.id == session_id)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        query = query.filter(SessionModel.club_id == current_user.club_id)
+    
+    session = query.first()
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -478,7 +536,13 @@ def get_rounds(
     current_user: User = Depends(get_current_user)
 ):
     """Get all rounds for a session."""
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    query = db.query(SessionModel).filter(SessionModel.id == session_id)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        query = query.filter(SessionModel.club_id == current_user.club_id)
+    
+    session = query.first()
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -496,7 +560,13 @@ def auto_assign_round(
     current_user: User = Depends(get_current_admin)
 ):
     """Auto-assign players to courts for the next round."""
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    query = db.query(SessionModel).filter(SessionModel.id == session_id)
+    
+    # Filter by club_id if user is not a super admin
+    if current_user.club_id is not None:
+        query = query.filter(SessionModel.club_id == current_user.club_id)
+    
+    session = query.first()
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -843,6 +913,18 @@ def update_court_assignment(
     current_user: User = Depends(get_current_admin)
 ):
     """Update a court assignment (manual edit)."""
+    # First check if the round belongs to user's club
+    round_query = db.query(Round).filter(Round.id == round_id)
+    if current_user.club_id is not None:
+        round_query = round_query.join(SessionModel).filter(SessionModel.club_id == current_user.club_id)
+    
+    round_obj = round_query.first()
+    if not round_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Round not found"
+        )
+    
     court = db.query(CourtAssignment).filter(
         CourtAssignment.round_id == round_id,
         CourtAssignment.court_number == court_number
