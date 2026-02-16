@@ -1,14 +1,15 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from app.auth import get_password_hash
 from app.database import get_db
 from app.dependencies import get_current_super_admin
 from app.models import (Club, ClubSettings, Player, RankingSystemType, Session,
-                        SubscriptionStatus, User, UserRole)
+                        SessionHistory, SubscriptionStatus, User, UserRole)
 from app.schemas import (ClubCreate, ClubResponse, ClubUpdate, UserCreate,
                          UserResponse, UserUpdate)
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
@@ -469,3 +470,139 @@ def delete_user(
     db.delete(user)
     db.commit()
     return None
+
+
+# Statistics Models
+class MatchTypeDistribution(BaseModel):
+    MM: int = 0
+    MF: int = 0
+    FF: int = 0
+
+
+class SessionStatsResponse(BaseModel):
+    session_id: int
+    session_name: str
+    session_date: str
+    total_rounds: int
+    total_players: int
+    total_matches: int
+    avg_matches_per_player: float
+    avg_waiting_time: float
+    fairness_score: float
+    match_type_distribution: MatchTypeDistribution
+    session_duration_minutes: float
+    total_round_duration_minutes: float
+
+
+class ClubStatsResponse(BaseModel):
+    club_id: int
+    club_name: str
+    total_sessions: int
+    total_players: int
+    total_matches_played: int
+    avg_session_duration_minutes: float
+    session_stats: List[SessionStatsResponse]
+
+
+class SuperAdminGlobalStatsResponse(BaseModel):
+    total_clubs: int
+    total_sessions: int
+    total_players: int
+    total_matches_played: int
+    avg_session_duration_minutes: float
+    club_stats: List[ClubStatsResponse]
+
+
+@router.get("/statistics", response_model=SuperAdminGlobalStatsResponse)
+def get_super_admin_statistics(
+    search: Optional[str] = Query(None, description="Search clubs by name"),
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin)
+):
+    """Get global statistics for all clubs (super admin only)."""
+    
+    # Get all clubs, optionally filtered by search
+    clubs_query = db.query(Club).filter(Club.is_active == True)
+    if search:
+        clubs_query = clubs_query.filter(Club.name.ilike(f"%{search}%"))
+    
+    clubs = clubs_query.all()
+    
+    club_stats_list = []
+    total_sessions = 0
+    total_matches = 0
+    total_duration = 0
+    session_count = 0
+    
+    for club in clubs:
+        # Get session histories for this club
+        session_histories = db.query(SessionHistory).join(
+            Session, SessionHistory.session_id == Session.id
+        ).filter(
+            Session.club_id == club.id
+        ).order_by(SessionHistory.started_at.desc()).all()
+        
+        club_total_sessions = len(session_histories)
+        club_total_matches = 0
+        club_total_duration = 0
+        club_session_stats = []
+        
+        for history in session_histories:
+            club_total_matches += history.total_matches
+            club_total_duration += history.session_duration_minutes
+            
+            club_session_stats.append(SessionStatsResponse(
+                session_id=history.session_id,
+                session_name=history.session_name,
+                session_date=history.started_at.isoformat(),
+                total_rounds=history.total_rounds,
+                total_players=history.total_players,
+                total_matches=history.total_matches,
+                avg_matches_per_player=history.avg_matches_per_player,
+                avg_waiting_time=history.avg_waiting_time,
+                fairness_score=history.fairness_score,
+                match_type_distribution=MatchTypeDistribution(
+                    MM=history.match_type_distribution.get("MM", 0),
+                    MF=history.match_type_distribution.get("MF", 0),
+                    FF=history.match_type_distribution.get("FF", 0)
+                ),
+                session_duration_minutes=history.session_duration_minutes,
+                total_round_duration_minutes=history.total_round_duration_minutes
+            ))
+        
+        # Get total players for this club
+        club_total_players = db.query(func.count(Player.id)).filter(
+            Player.club_id == club.id,
+            Player.is_active == True
+        ).scalar() or 0
+        
+        club_avg_duration = club_total_duration / club_total_sessions if club_total_sessions > 0 else 0
+        
+        club_stats_list.append(ClubStatsResponse(
+            club_id=club.id,
+            club_name=club.name,
+            total_sessions=club_total_sessions,
+            total_players=club_total_players,
+            total_matches_played=club_total_matches,
+            avg_session_duration_minutes=round(club_avg_duration, 1),
+            session_stats=club_session_stats
+        ))
+        
+        total_sessions += club_total_sessions
+        total_matches += club_total_matches
+        total_duration += club_total_duration
+        session_count += club_total_sessions
+    
+    # Get total active players across all clubs
+    total_players = db.query(func.count(Player.id)).filter(Player.is_active == True).scalar() or 0
+    
+    avg_session_duration = total_duration / session_count if session_count > 0 else 0
+    
+    return SuperAdminGlobalStatsResponse(
+        total_clubs=len(clubs),
+        total_sessions=total_sessions,
+        total_players=total_players,
+        total_matches_played=total_matches,
+        avg_session_duration_minutes=round(avg_session_duration, 1),
+        club_stats=club_stats_list
+    )

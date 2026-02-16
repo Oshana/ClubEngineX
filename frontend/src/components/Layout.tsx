@@ -19,7 +19,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               {user?.role === UserRole.SUPER_ADMIN && (
                 <>
                   <Link to="/super-admin" className="text-gray-700 hover:text-primary-600">
-                    Super Admin
+                    Dashboard
+                  </Link>
+                  <Link to="/super-admin/statistics" className="text-gray-700 hover:text-primary-600">
+                    Statistics
                   </Link>
                 </>
               )}

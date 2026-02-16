@@ -108,6 +108,8 @@ export const superAdminAPI = {
   toggleClubActive: (id: number) => api.patch(`/super-admin/clubs/${id}/toggle-active`),
   getClubStats: (id: number) => api.get(`/super-admin/clubs/${id}/stats`),
   getClubAdmins: (id: number) => api.get(`/super-admin/clubs/${id}/admins`),
+  getStatistics: (params?: { search?: string }) => 
+    api.get('/super-admin/statistics', { params }),
 };
 
 export default api;

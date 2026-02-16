@@ -14,6 +14,7 @@ import Sessions from './pages/Sessions';
 import Settings from './pages/Settings';
 import Statistics from './pages/Statistics';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import SuperAdminStatistics from './pages/SuperAdminStatistics';
 import { UserRole } from './types';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -166,6 +167,17 @@ function App() {
                 <SuperAdminRoute>
                   <Layout>
                     <SuperAdminDashboard />
+                  </Layout>
+                </SuperAdminRoute>
+              }
+            />
+            
+            <Route
+              path="/super-admin/statistics"
+              element={
+                <SuperAdminRoute>
+                  <Layout>
+                    <SuperAdminStatistics />
                   </Layout>
                 </SuperAdminRoute>
               }
