@@ -171,7 +171,7 @@ const WaitingList: React.FC<WaitingListProps> = ({ players, stats, rounds, atten
 
   return (
     <div className="h-[600px] flex flex-col">
-      <h2 className="text-xl font-bold mb-4">Waiting List ({sortedPlayers.length})</h2>
+      <h2 className="text-xl font-bold mb-4">Waiting List ({players.length})</h2>
       
       <div ref={setDropRef} className="card flex flex-col flex-1 overflow-hidden">
         <input

@@ -469,6 +469,11 @@ const SessionDetail: React.FC = () => {
       setCurrentRound(response.data);
       setShowCancelButton(false); // Don't show Cancel button for auto-assigned rounds
       setShowMatchCombinationModal(false);
+      
+      // Show success notification
+      const totalCourts = mm + mf + ff;
+      showNotification('success', `Next round assigned successfully! ${totalCourts} court${totalCourts !== 1 ? 's' : ''} ready.`);
+      
       // Reload data in background
       loadData();
     } catch (error: any) {
@@ -537,7 +542,12 @@ const SessionDetail: React.FC = () => {
       // Stop and reset timer
       setIsTimerRunning(false);
       setTimeRemaining(null);
-      loadData();
+      await loadData();
+      
+      // Automatically assign the next round
+      setTimeout(() => {
+        handleAutoAssignClick();
+      }, 500); // Small delay to ensure data is loaded
     } catch (error) {
       console.error('Failed to end round:', error);
     }
@@ -551,7 +561,9 @@ const SessionDetail: React.FC = () => {
       // Stop and reset timer
       setIsTimerRunning(false);
       setTimeRemaining(null);
-      loadData();
+      await loadData();
+      
+      // Do not auto-assign when manually ending mid-game
     } catch (error) {
       console.error('Failed to end round:', error);
       setShowEndRoundConfirm(false);
@@ -1126,9 +1138,25 @@ const SessionDetail: React.FC = () => {
     });
     
     const allPlayersWithTemp = getAllPlayersIncludingTemp();
-    return allPlayersWithTemp.filter(p => 
+    const waitingPlayers = allPlayersWithTemp.filter(p => 
       confirmedSessionPlayers.includes(p.id) && !playingPlayerIds.has(p.id)
     );
+    
+    // Debug: Check for duplicates
+    const playerIds = waitingPlayers.map(p => p.id);
+    const uniqueIds = new Set(playerIds);
+    if (playerIds.length !== uniqueIds.size) {
+      console.error('DUPLICATE PLAYERS DETECTED in waiting list!');
+      console.error('Total players:', playerIds.length);
+      console.error('Unique players:', uniqueIds.size);
+      console.error('Player IDs:', playerIds);
+      console.error('Confirmed session players:', confirmedSessionPlayers);
+      console.error('All players with temp:', allPlayersWithTemp.length);
+    } else {
+      console.log('Waiting list check - Total:', waitingPlayers.length, 'Playing:', playingPlayerIds.size, 'Confirmed:', confirmedSessionPlayers.length);
+    }
+    
+    return waitingPlayers;
   };
 
   if (loading) {
@@ -1258,7 +1286,7 @@ const SessionDetail: React.FC = () => {
         >
           Manual Assignment
         </button>
-        {currentRound && !currentRound.started_at && (
+        {currentRound && (!currentRound.started_at || currentRound.ended_at) && (
           <>
             <button 
               onClick={handleStartRound} 
@@ -1465,7 +1493,7 @@ const SessionDetail: React.FC = () => {
                   key={court.id}
                   court={court}
                   allPlayers={allPlayers}
-                  isDragDisabled={!!(currentRound?.started_at)}
+                  isDragDisabled={!!(currentRound?.started_at && !currentRound?.ended_at)}
                   onRemovePlayer={handleMoveToWaitingList}
                 />
               ))}
@@ -1483,7 +1511,7 @@ const SessionDetail: React.FC = () => {
               stats={stats}
               rounds={rounds}
               attendanceRecords={attendanceRecords}
-              isDragDisabled={!currentRound || currentRound.started_at !== null}
+              isDragDisabled={!currentRound || (currentRound.started_at !== null && !currentRound.ended_at)}
             />
           </div>
         </div>
@@ -2857,7 +2885,7 @@ const SessionDetail: React.FC = () => {
 
       {/* Time's Up Alarm Popup */}
       {showAlarmPopup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4 text-center">
             <div className="mb-4">
               <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -2879,6 +2907,7 @@ const SessionDetail: React.FC = () => {
                   alarmAudioContextRef.current = null;
                 }
                 setShowAlarmPopup(false);
+                // Keep court display open to show next round
                 confirmEndRoundDirectly();
               }}
               className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-lg"
@@ -2906,17 +2935,64 @@ const SessionDetail: React.FC = () => {
                   <p className="text-sm text-indigo-100">Round {rounds.findIndex(r => r.id === currentRound.id) + 1} • {currentRound.court_assignments.length} Courts Active</p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowCourtDisplay(false)}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-2 backdrop-blur-sm"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Close
-              </button>
+              
+              {/* Timer Display */}
+              <div className="flex items-center gap-6">
+                {timeRemaining !== null ? (
+                  <div className="text-center bg-yellow-400/90 rounded-xl px-8 py-3 shadow-lg border-2 border-yellow-500 animate-pulse">
+                    <p className="text-xs text-yellow-900 mb-0.5 font-semibold tracking-wide">Time Remaining</p>
+                    <div className={`text-5xl font-extrabold font-mono drop-shadow-lg ${timeRemaining <= 60 ? 'text-red-600 animate-pulse' : 'text-yellow-900'}`}
+                      style={{ textShadow: '0 0 16px #FFD700, 0 0 8px #FFA500' }}>
+                      {formatTime(timeRemaining)}
+                    </div>
+                    {timeRemaining === 0 && (
+                      <p className="text-xs text-red-600 font-semibold mt-2">Time's up!</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center bg-white/10 rounded-lg px-6 py-2 backdrop-blur-sm">
+                    <p className="text-xs text-indigo-100 mb-0.5">Match Duration</p>
+                    <div className="text-2xl font-bold text-white/70">
+                      {session?.match_duration_minutes || 0} min
+                    </div>
+                  </div>
+                )}
+                
+                {currentRound && !currentRound.started_at && (
+                  <button
+                    onClick={handleStartRound}
+                    className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors font-semibold flex items-center gap-2 shadow-lg"
+                    disabled={!currentRound.court_assignments || currentRound.court_assignments.length === 0}
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Start Round
+                  </button>
+                )}
+                
+                <button
+                  onClick={() => setShowCourtDisplay(false)}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-2 backdrop-blur-sm"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Close
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* Notification for next round being prepared */}
+          {currentRound && !currentRound.started_at && (
+            <div className="bg-gradient-to-r from-green-500 to-emerald-500 px-6 py-3 text-center">
+              <p className="text-white font-semibold text-lg">
+                ✨ Next Round Ready! Click "Start Round" to begin the timer.
+              </p>
+            </div>
+          )}
 
           {/* Courts Grid */}
           <div className="flex-1 overflow-hidden p-4">

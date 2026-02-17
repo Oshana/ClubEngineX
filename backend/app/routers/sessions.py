@@ -856,6 +856,7 @@ def start_round(
         )
     
     round_obj.started_at = datetime.utcnow()
+    round_obj.ended_at = None  # Clear ended_at to allow restarting a previously ended round
     db.commit()
     db.refresh(round_obj)
     return round_obj
